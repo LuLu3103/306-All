@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="西综学习台：西综讲义进度看板 + 学习转盘，五科学科任务与计时抽签，进度云端同步。">
+  <meta name="theme-color" content="#2563eb">
+  <title>西综讲义进度看板</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232563eb'/%3E%3Cpath d='M32 15v34M15 32h34' stroke='white' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/turntable.css">
+</head>
+<body>
+
+  <!-- ==================== 顶栏 ==================== -->
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand">
+        <div class="brand__logo" aria-hidden="true">西</div>
+        <div class="brand__text">
+          <h1>西综讲义进度看板</h1>
+          <p class="brand__sub">生理 · 病理 · 内科 · 外科 · 生化</p>
+        </div>
+      </div>
+
+      <!-- 功能切换：进度看板 / 学习转盘 -->
+      <div class="view-switch" role="tablist" aria-label="切换功能">
+        <button class="view-switch__btn is-active" id="viewBoardBtn" type="button" role="tab"
+                aria-selected="true" data-view="board">进度看板</button>
+        <button class="view-switch__btn" id="viewWheelBtn" type="button" role="tab"
+                aria-selected="false" data-view="wheel">学习转盘</button>
+      </div>
+
+      <!-- 学科按钮组（生理-病理-内科-外科-生化，由 JS 按数据顺序渲染） -->
+      <nav class="subject-nav" id="subjectNav" role="tablist" aria-label="选择学科"></nav>
+
+      <div class="topbar__extras">
+        <!-- 外链按钮 -->
+        <div class="topbar__links">
+          <a class="link-btn" href="https://toashore.cn/public/apps/calendar/online/index.html?qq_aio_chat_type=2"
+             target="_blank" rel="noopener noreferrer" title="打开 ttsx 每日计划（新窗口）">
+            <span class="link-btn__text">ttsx每日计划</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+          <a class="link-btn" href="https://rray1228.github.io/neike-306-tiku/?view=mnemonics"
+             target="_blank" rel="noopener noreferrer" title="打开 ttsx 口诀 / 题库（新窗口）">
+            <span class="link-btn__text">ttsx口诀/题库</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+        </div>
+
+        <!-- 云同步状态 -->
+        <div class="sync-area">
+          <button class="sync-chip" id="syncChip" type="button" data-status="unconfigured" title="云同步状态">
+            <span class="sync-dot" aria-hidden="true"></span>
+            <span id="syncText">云同步</span>
+          </button>
+        </div>
+
+        <!-- 统计按钮：点开是下拉统计面板 -->
+        <button class="stats-toggle" id="btnStatsToggle" type="button"
+                aria-expanded="false" aria-controls="statsPopover" title="打开 / 收起统计">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 20V10"></path>
+            <path d="M10 20V4"></path>
+            <path d="M16 20v-7"></path>
+            <path d="M22 20H2"></path>
+          </svg>
+          <span class="stats-toggle__label">统计</span>
+          <span class="stats-toggle__value" id="statsToggleText">0%</span>
+          <svg class="stats-toggle__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        <!-- 数据工具（仅看板视图显示） -->
+        <div class="topbar__tools">
+          <button class="tool-btn" id="btnExport" type="button" title="把完成记录导出为 JSON 备份">导出</button>
+          <button class="tool-btn" id="btnImport" type="button" title="从 JSON 文件恢复完成记录">导入</button>
+          <button class="tool-btn tool-btn--danger" id="btnReset" type="button" title="清空全部完成记录">重置</button>
+          <input type="file" id="importFile" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </div>
+
+    <!-- 统计下拉面板（原右侧统计栏移到这里，可随时收起） -->
+    <div class="stats-popover" id="statsPopover" hidden>
+      <div class="stats-popover__head">
+        <div>
+          <h2>学习统计</h2>
+          <p>总进度与各学科完成情况</p>
+        </div>
+        <button class="stats-popover__close" id="btnStatsClose" type="button" aria-label="收起统计">×</button>
+      </div>
+
+      <div class="stats">
+        <section class="overview" aria-label="总进度">
+          <div class="progress-ring" id="ringOverall">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle class="ring-value" id="ringValue" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="progress-ring__label">
+              <strong id="overallPercent">0%</strong>
+              <span>总进度</span>
+            </div>
+          </div>
+          <div class="overview__numbers">
+            <div class="num num--done"><strong id="totalDone">0</strong><span>已完成</span></div>
+            <div class="num"><strong id="totalLeft">0</strong><span>剩余</span></div>
+            <div class="num"><strong id="totalAll">0</strong><span>总任务</span></div>
+          </div>
+        </section>
+
+        <section class="stat-list" id="statList" aria-label="各学科统计"></section>
+
+        <section class="tip-card" id="tipCard" aria-label="提示"></section>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== 进度看板视图 ==================== -->
+  <main class="layout" id="boardView" aria-label="进度看板">
+
+    <!-- ---------- 功能栏：当前学科的任务 ---------- -->
+    <section class="panel panel--tasks" aria-label="功能栏">
+      <div class="panel__head">
+        <div class="panel__title">
+          <h2 id="subjectTitle">生理</h2>
+          <span class="panel__meta" id="subjectMeta">—</span>
+        </div>
+        <div class="panel__tools">
+          <label class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="20" y1="20" x2="16.2" y2="16.2"></line>
+            </svg>
+            <input id="searchInput" type="search" placeholder="搜索任务 / 页码" autocomplete="off"
+                   aria-label="搜索任务">
+          </label>
+          <button class="chip-btn" id="btnHideDone" type="button" aria-pressed="false">隐藏已完成</button>
+          <button class="chip-btn" id="btnExpandAll" type="button">全部展开</button>
+          <button class="chip-btn" id="btnCollapseAll" type="button">全部收起</button>
+        </div>
+      </div>
+
+      <div class="panel__body">
+        <div class="task-list" id="taskList"></div>
+        <div class="empty-state" id="emptyState" hidden>
+          <p>没有匹配的任务</p>
+          <span>试试换个关键词，或关闭「隐藏已完成」</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== 学习转盘视图 ==================== -->
+  <main class="tt-view" id="wheelView" hidden aria-label="学习转盘">
+
+    <!-- 转盘工具栏：时钟 + 日期 + 云同步状态 -->
+    <div class="tt-toolbar">
+      <div class="clock-block">
+        <div class="clock" id="clock">--:--:--</div>
+        <div class="clock-meta">
+          <span id="clockDate">正在读取本地时间…</span>
+          <span class="clock-dot" aria-hidden="true"></span>
+          <span id="viewMeta">今天</span>
+        </div>
+      </div>
+
+      <div class="date-block">
+        <div class="date-row">
+          <button class="icon-btn" id="prevDay" type="button" title="前一天" aria-label="查看前一天">‹</button>
+          <input type="date" id="datePicker" aria-label="选择要查看的日期">
+          <button class="icon-btn" id="nextDay" type="button" title="后一天" aria-label="查看后一天">›</button>
+        </div>
+        <div class="date-meta">
+          <span class="storage-pill" id="storagePill" title="转盘记录保存在云端">云端同步</span>
+          <button class="btn btn-ghost btn-sm" id="todayBtn" type="button">回到今天</button>
+          <button class="btn btn-ghost btn-sm" id="helpBtn" type="button" aria-haspopup="dialog">使用说明</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tt-layout">
+      <!-- 学习转盘 -->
+      <section class="card wheel-card" aria-label="学习转盘">
+        <div class="card-head">
+          <div>
+            <h2>学习转盘</h2>
+            <p class="card-sub">30 份任务 · 25 份学习时长 + 5 份休息</p>
+          </div>
+          <span class="pill" id="wheelModePill">今天</span>
+        </div>
+
+        <div class="wheel-stage" id="wheelStage">
+          <div class="wheel-canvas-wrap">
+            <canvas id="wheelCanvas" role="img" aria-label="包含 30 个学习与休息时长的转盘"></canvas>
+          </div>
+          <div class="wheel-pointer" aria-hidden="true"></div>
+          <button class="wheel-hub" id="hubSpin" type="button" aria-label="抽取任务">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5.4v13.2c0 .8.9 1.3 1.6.9l10.2-6.6c.6-.4.6-1.4 0-1.8L9.6 4.5C8.9 4.1 8 4.6 8 5.4z"></path>
+            </svg>
+            <span>抽取</span>
+          </button>
+        </div>
+
+        <div class="wheel-legend">
+          <span class="legend-item"><i class="legend-dot legend-dot--study"></i>学习时长</span>
+          <span class="legend-item"><i class="legend-dot legend-dot--rest"></i>休息时长</span>
+          <span class="legend-note">最小 10min · 最大 2h</span>
+        </div>
+
+        <button class="btn btn-primary btn-xl" id="spinBtn" type="button">抽取学习任务</button>
+
+        <div class="result" id="resultCard" aria-live="polite">
+          <div class="result-empty" id="resultEmpty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5"></circle>
+              <circle cx="12" cy="12" r="4.6"></circle>
+              <circle cx="12" cy="12" r="1" fill="currentColor"></circle>
+            </svg>
+            <p id="resultEmptyText">点击下方按钮，抽出今天的任务吧</p>
+          </div>
+          <div class="result-body" id="resultBody" hidden>
+            <div class="result-main">
+              <span class="result-type" id="resultType">学习任务</span>
+              <strong class="result-time" id="resultTime">45min</strong>
+              <span class="result-note" id="resultNote">已加入今日任务，完成后记得打卡</span>
+              <div class="result-progress" id="resultProgress" hidden>
+                <span id="resultProgressBar"></span>
+              </div>
+            </div>
+            <div class="result-actions">
+              <button class="btn btn-ghost btn-sm" id="resultDone" type="button">标记完成</button>
+              <button class="btn btn-primary btn-sm" id="resultAgain" type="button">再抽一次</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="side">
+        <!-- 任务栏 -->
+        <section class="card tasks-card" aria-label="任务栏">
+          <div class="card-head">
+            <div>
+              <h2>任务栏</h2>
+              <p class="card-sub" id="taskSub">今天 · 共 0 条记录</p>
+            </div>
+            <span class="pill pill--muted" id="taskViewPill">今天</span>
+          </div>
+
+          <ul class="tt-task-list" id="ttTaskList"></ul>
+          <div class="tt-empty-state" id="taskEmpty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 6h11"></path>
+              <path d="M9 12h11"></path>
+              <path d="M9 18h11"></path>
+              <path d="M4 6h.01"></path>
+              <path d="M4 12h.01"></path>
+              <path d="M4 18h.01"></path>
+            </svg>
+            <p id="taskEmptyText">还没有任务，转动转盘开始今天的学习吧</p>
+          </div>
+
+          <div class="card-foot">
+            <span class="foot-hint" id="taskFootHint">已完成 0 项 · 待完成 0 项</span>
+            <button class="btn btn-danger-ghost btn-sm" id="clearDayBtn" type="button">清空当日</button>
+          </div>
+        </section>
+
+        <!-- 统计栏 -->
+        <section class="card stats-card" aria-label="统计栏">
+          <div class="card-head">
+            <div>
+              <h2>统计栏</h2>
+              <p class="card-sub" id="statsSub">今日累计</p>
+            </div>
+            <span class="pill" id="statsPill">今天</span>
+          </div>
+
+          <div class="range-tabs" role="tablist" aria-label="统计时间范围">
+            <button class="range-tab is-active" type="button" role="tab" aria-selected="true" data-range="today" id="rangeToday">今日</button>
+            <button class="range-tab" type="button" role="tab" aria-selected="false" data-range="week" id="rangeWeek">近 7 天</button>
+            <button class="range-tab" type="button" role="tab" aria-selected="false" data-range="month" id="rangeMonth">近 30 天</button>
+          </div>
+
+          <div class="stat-grid">
+            <div class="tt-stat stat--study">
+              <span class="stat-label">学习时间</span>
+              <strong class="stat-value" id="statStudy">0min</strong>
+              <span class="stat-sub" id="statStudySub">共 0 次</span>
+            </div>
+            <div class="tt-stat stat--rest">
+              <span class="stat-label">休息时间</span>
+              <strong class="stat-value" id="statRest">0min</strong>
+              <span class="stat-sub" id="statRestSub">共 0 次</span>
+            </div>
+            <div class="tt-stat stat--task">
+              <span class="stat-label">已完成</span>
+              <strong class="stat-value" id="statDone">0<small>项</small></strong>
+              <span class="stat-sub" id="statDoneSub">共 0 条任务</span>
+            </div>
+          </div>
+
+          <div class="ratio">
+            <div class="ratio-labels">
+              <span>学习占比 <b id="ratioStudy">0%</b></span>
+              <span>休息占比 <b id="ratioRest">0%</b></span>
+            </div>
+            <div class="ratio-bar">
+              <span class="ratio-study" id="ratioStudyBar"></span>
+              <span class="ratio-rest" id="ratioRestBar"></span>
+            </div>
+          </div>
+
+          <p class="stats-note" id="statsNote">学习 / 休息时长按当天抽到的任务累计；勾选完成仅用于打卡统计。</p>
+
+          <div class="stats-actions">
+            <button class="btn btn-primary-ghost" id="chartBtn" type="button" aria-expanded="false">生成统计图表</button>
+            <button class="btn btn-ghost" id="saveChartBtn" type="button" disabled>保存图表 PNG</button>
+          </div>
+
+          <div class="chart-area" id="chartArea" hidden>
+            <div class="chart-block chart-block--donut">
+              <h3 id="donutChartTitle">学习 / 休息占比</h3>
+              <canvas id="donutChart" class="donut-chart" role="img" aria-label="学习与休息时长占比环形图"></canvas>
+              <div class="chart-legend">
+                <span><i class="legend-dot legend-dot--study"></i><span id="donutLegendStudy">学习 0min</span></span>
+                <span><i class="legend-dot legend-dot--rest"></i><span id="donutLegendRest">休息 0min</span></span>
+              </div>
+            </div>
+            <div class="chart-block chart-block--bars">
+              <h3 id="barChartTitle">每次任务时长</h3>
+              <canvas id="barChart" class="bar-chart" role="img" aria-label="每次任务时长柱状图"></canvas>
+              <p class="chart-hint" id="chartHint">按抽取顺序排列，虚线为平均时长</p>
+            </div>
+          </div>
+
+          <div class="data-actions">
+            <button class="btn btn-ghost btn-sm" id="exportBtn" type="button">导出数据</button>
+            <button class="btn btn-ghost btn-sm" id="importBtn" type="button">导入数据</button>
+            <input type="file" id="ttImportFile" accept=".json,application/json" hidden>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <footer class="app-foot">
+      <span id="footerNote">进度云端同步 · 支持查看往日数据</span>
+      <span class="foot-sep" aria-hidden="true">·</span>
+      <button class="tt-link-btn" id="resetAllBtn" type="button">清空全部数据</button>
+    </footer>
+
+    <!-- 使用说明 -->
+    <div class="tt-modal" id="helpModal" hidden>
+      <div class="tt-modal-backdrop" id="helpBackdrop"></div>
+      <div class="tt-modal-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <div class="tt-modal-head">
+          <div>
+            <h2 id="helpTitle">使用说明</h2>
+            <p class="tt-modal-sub">学习转盘 · 一分钟上手</p>
+          </div>
+          <button class="tt-modal-close" id="helpClose" type="button" aria-label="关闭使用说明">×</button>
+        </div>
+        <ol class="help-list">
+          <li>
+            <b>抽取任务</b>
+            <span>点击「抽取学习任务」或转盘中心的「抽取」，转盘停止后抽到的时长会自动记入任务栏。</span>
+          </li>
+          <li>
+            <b>计时规则</b>
+            <span>抽到学习任务，必须等倒计时结束才能再抽；抽到休息任务，可以随时点「跳过休息」抽下一轮。</span>
+          </li>
+          <li>
+            <b>任务栏</b>
+            <span>可勾选完成、删除记录、清空当日；用顶栏日期选择器可查看往日数据（只读）。</span>
+          </li>
+          <li>
+            <b>统计栏</b>
+            <span>切换今日 / 近 7 天 / 近 30 天查看累计数据，生成图表后可保存为 PNG，也可以随手收起。</span>
+          </li>
+          <li>
+            <b>数据备份</b>
+            <span>连接同步码后记录会自动保存到云端；也可在统计栏导出 / 导入 JSON 备份。</span>
+          </li>
+        </ol>
+        <div class="tt-modal-foot">
+          <span>进度云端同步 · 换设备填同一个同步码即可继续</span>
+          <button class="btn btn-primary btn-sm" id="helpOk" type="button">知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 轻提示（转盘） -->
+    <div class="tt-toast" id="ttToast"></div>
+  </main>
+
+  <!-- ==================== 通用页脚（仅看板视图显示） ==================== -->
+  <footer class="footer" id="boardFooter">
+    进度云端同步（Supabase · 免登录同步码）· 支持导出备份 · 快捷键 1-5 切换学科
+  </footer>
+
+  <!-- ==================== 云同步（同步码）弹窗 ==================== -->
+  <div class="modal" id="syncModal" hidden>
+    <div class="modal__backdrop" data-close-modal="syncModal"></div>
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+      <button class="modal__close" type="button" data-close-modal="syncModal" aria-label="关闭">×</button>
+      <h2 class="modal__title" id="syncTitle">云同步（免登录）</h2>
+      <p class="modal__sub">
+        不需要注册账号。同步码就是钥匙：在每台设备的浏览器里填入同一个同步码，就能共享同一份进度
+        （看板与转盘共用同一个同步码）。
+      </p>
+
+      <label class="field">
+        <span class="field__label">同步码</span>
+        <input id="syncCodeInput" type="text" autocomplete="off" spellcheck="false"
+               placeholder="至少 6 位，建议用随机码">
+      </label>
+
+      <p class="auth-msg" id="syncError" hidden></p>
+
+      <div class="sync-actions">
+        <button class="auth-submit" id="btnConnect" type="button">连接并同步</button>
+        <button class="chip-btn" id="btnGenCode" type="button">生成随机码</button>
+      </div>
+
+      <p class="modal__hint">
+        第一次使用：弹窗会自动填好一个随机码，点「连接并同步」后把它记下来；
+        换手机 / 电脑时填同一个码即可继续。同步码相当于密码，请不要公开。
+      </p>
+
+      <p class="modal__hint">
+        <button class="link-inline" id="btnDisconnect" type="button" hidden>断开本机同步</button>
+      </p>
+
+      <p class="modal__hint">
+        还没有建库？
+        <button class="link-inline" id="openSetupFromSync" type="button">查看 Supabase 配置指南</button>
+      </p>
+    </div>
+  </div>
+
+  <!-- ==================== Supabase 配置指南弹窗 ==================== -->
+  <div class="modal" id="setupModal" hidden>
+    <div class="modal__backdrop" data-close-modal="setupModal"></div>
+    <div class="modal__panel modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+      <button class="modal__close" type="button" data-close-modal="setupModal" aria-label="关闭">×</button>
+      <h2 class="modal__title" id="setupTitle">配置 Supabase 云同步</h2>
+      <p class="modal__sub">一次性配置，约 3 分钟。看板与转盘共用这一个同步码。</p>
+
+      <ol class="setup-steps">
+        <li>
+          <b>新建项目</b>：打开 <a href="https://supabase.com" target="_blank" rel="noopener noreferrer">supabase.com</a>
+          登录 → <i>New project</i>。创建完成后在 <i>Project Settings → API</i> 里复制
+          <code>Project URL</code> 和 <code>anon public</code> 密钥。
+        </li>
+        <li>
+          <b>建表并创建读写函数</b>：打开 <i>SQL Editor</i>，粘贴执行下面的 SQL（一次跑完即可）。
+          <button class="copy-btn" type="button" data-copy-target="setupSql">复制 SQL</button>
+          <pre class="code"><code id="setupSql">-- 1) 存放进度的表：一行 = 一个同步码
+create table if not exists public.boards (
+  code text primary key,
+  progress jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+-- 2) 表本身不对外开放，只允许通过下面的函数读写
+alter table public.boards enable row level security;
+
+-- 3) 读取某个同步码的进度
+create or replace function public.load_board(p_code text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce(progress, '[]'::jsonb) from boards where code = p_code;
+$$;
+
+-- 4) 保存某个同步码的进度（不存在就创建）
+create or replace function public.save_board(p_code text, p_progress jsonb)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into boards (code, progress, updated_at)
+  values (p_code, coalesce(p_progress, '[]'::jsonb), now())
+  on conflict (code) do update
+    set progress = excluded.progress,
+        updated_at = now();
+$$;
+
+-- 5) 只允许匿名前端调用这两个函数
+revoke all on function public.load_board(text) from public;
+revoke all on function public.save_board(text, jsonb) from public;
+grant execute on function public.load_board(text) to anon, authenticated;
+grant execute on function public.save_board(text, jsonb) to anon, authenticated;</code></pre>
+        </li>
+        <li>
+          <b>填写配置</b>：把上一步的 URL 和 anon key 填进仓库里的
+          <code>js/supabase-config.js</code>：
+          <button class="copy-btn" type="button" data-copy-target="setupConfig">复制模板</button>
+          <pre class="code"><code id="setupConfig">window.SUPABASE_CONFIG = {
+  url: 'https://你的项目编号.supabase.co',
+  anonKey: '你的 anon public key'
+};</code></pre>
+        </li>
+        <li>
+          <b>刷新页面并连接</b>：重新打开本页面，点顶栏「<i>设置同步码</i>」→ 弹窗会自动填好随机码 →
+          点「连接并同步」并记下它。之后在手机 / 电脑上打开同一页面，填入这个同步码即可同步看板与转盘。
+        </li>
+      </ol>
+
+      <p class="modal__hint">
+        安全说明：<code>anon key</code> 可以公开在前端；数据库表默认拒绝匿名直接读写，只能通过
+        <code>load_board</code> / <code>save_board</code> 两个函数按同步码访问，所以请把同步码当成密码保管。
+        请勿把 <code>service_role</code> 密钥写进前端。
+      </p>
+    </div>
+  </div>
+
+  <!-- 轻提示（看板） -->
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- 任务数据（单独维护，不写在页面里） -->
+  <script src="data/tasks.js"></script>
+  <!-- Supabase 配置（需自行填写） -->
+  <script src="js/supabase-config.js"></script>
+  <!-- 云同步模块（按需加载 Supabase SDK） -->
+  <script src="js/cloud.js"></script>
+  <!-- 学习转盘：纯逻辑 / 转盘绘制 / 图表 / 页面逻辑 -->
+  <script src="js/turntable/core.js"></script>
+  <script src="js/turntable/wheel.js"></script>
+  <script src="js/turntable/charts.js"></script>
+  <script src="js/turntable/app.js"></script>
+  <!-- 看板交互 + 视图切换 + 云同步接线 -->
+  <script src="js/app.js"></script>
+</body>
+</html>
