@@ -102,76 +102,10 @@ window.TASKS_DATA = {
 
 ## 三、Supabase 云同步设置（免登录 · 约 3 分钟）
 
-不需要注册 / 登录账号，数据放在你自己的 Supabase 项目里。**看板和转盘共用这一套配置与同步码。**
-前端直接用浏览器 `fetch` 调用 `load_board` / `save_board` 两个 RPC（不需要加载任何 CDN 脚本，网络不稳也不会影响页面打开）。
-
-1. 打开 https://supabase.com 登录（用现有账号即可），点 **New project** 新建一个项目，等待初始化完成。
-2. 在 **Project Settings → API** 找到并复制两个值：
-   - `Project URL`，形如 `https://abcdefghijklmn.supabase.co`
-   - `anon public` / `publishable` 密钥，形如 `eyJhbGciOi...` 或 `sb_publishable_...`
-3. 打开 **SQL Editor**，新建查询，粘贴执行下面整段 SQL：
-
-```sql
--- 1) 存放进度的表：一行 = 一个同步码
-create table if not exists public.boards (
-  code text primary key,
-  progress jsonb not null default '[]'::jsonb,
-  updated_at timestamptz not null default now()
-);
-
--- 2) 表本身不对外开放，只允许通过下面的函数读写
-alter table public.boards enable row level security;
-
--- 3) 读取某个同步码的进度
-create or replace function public.load_board(p_code text)
-returns jsonb
-language sql
-security definer
-set search_path = public
-as $$
-  select coalesce(progress, '[]'::jsonb) from boards where code = p_code;
-$$;
-
--- 4) 保存某个同步码的进度（不存在就创建）
-create or replace function public.save_board(p_code text, p_progress jsonb)
-returns void
-language sql
-security definer
-set search_path = public
-as $$
-  insert into boards (code, progress, updated_at)
-  values (p_code, coalesce(p_progress, '[]'::jsonb), now())
-  on conflict (code) do update
-    set progress = excluded.progress,
-        updated_at = now();
-$$;
-
--- 5) 只允许匿名前端调用这两个函数
-revoke all on function public.load_board(text) from public;
-revoke all on function public.save_board(text, jsonb) from public;
-grant execute on function public.load_board(text) to anon, authenticated;
-grant execute on function public.save_board(text, jsonb) to anon, authenticated;
-```
-
-4. 把 URL 和 anon key 填进 `js/supabase-config.js`：
-
-```js
-window.SUPABASE_CONFIG = {
-  url: 'https://你的项目编号.supabase.co',
-  anonKey: '你的 anon public key'
-};
-```
-
-5. 刷新页面，点顶栏的「**设置同步码**」→ 弹窗会自动填好一个随机码 → 点「**连接并同步**」即可。
+1. 点顶栏的「**设置同步码**」→ 弹窗会自动填好一个随机码 → 点「**连接并同步**」即可。
    - 第一次会创建这个同步码对应的云端记录
    - 把同步码记下来（备忘录 / 截图都行；也可以点「生成随机码」换一个）
-6. 在手机、另一台电脑上打开同一页面，填入**同一个同步码** → 连接，即可看到同一份看板与转盘记录。
-
-存储方式（不需要额外建表）：
-
-- 看板进度存在该同步码对应的行里（`progress` 为已完成任务 id 数组）
-- 转盘记录存在同一张表、同一个同步码加后缀 `#turntable` 的行里（`progress` 为 `{ version, updatedAt, days }` 对象）
-- 两者由前端自动区分，云端只多一行数据
+2. 在手机、另一台电脑上打开同一页面，填入**同一个同步码** → 连接，即可看到同一份看板与转盘记录。
 
 使用说明：
 
@@ -198,43 +132,7 @@ python -m http.server 8080
 # 然后访问 http://localhost:8080
 ```
 
----
-
-## 五、部署到 GitHub Pages
-
-### 方式 A：Actions 自动部署（推荐，仓库里可以放讲义等大文件）
-
-本仓库已包含 `.github/workflows/pages.yml`：推送 `main` 分支后自动把**站点文件**发布到 Pages（只打包 `index.html`、`css/`、`js/`、`data/`，不会把 PDF 讲义上传成网页资源）。
-
-1. 在 GitHub 新建仓库并推送本项目
-2. 仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**
-3. 推送 `main` 分支（或手动运行工作流），等待部署完成
-4. 访问 `https://<用户名>.github.io/<仓库名>/`
-
-### 方式 B：手动上传（最简单）
-
-1. 新建仓库，只上传站点文件（保持目录结构）：
-   - `index.html`
-   - `css/style.css`
-   - `css/turntable.css`
-   - `js/app.js`
-   - `js/cloud.js`
-   - `js/supabase-config.js`
-   - `js/turntable/core.js`
-   - `js/turntable/wheel.js`
-   - `js/turntable/charts.js`
-   - `js/turntable/app.js`
-   - `data/tasks.js`
-   - `.nojekyll`（可选，防止 Jekyll 处理）
-2. **Settings → Pages → Source** 选择 **Deploy from a branch**，分支选 `main`、目录选 `/ (root)`
-3. 稍等片刻访问 `https://<用户名>.github.io/<仓库名>/`
-
-> 注意：`js/supabase-config.js` 里只有可公开的 `anon key`，可以放心提交；
-> 不要把 `讲义/`（约 600 MB 的 PDF）与 `目录/` 原图一起提交到 GitHub，网站运行不需要它们。
-
----
-
-## 六、目录结构
+## 五、目录结构
 
 ```
 .
@@ -277,7 +175,7 @@ node tests/turntable_app_test.js
 
 ---
 
-## 七、备份与恢复
+## 六、备份与恢复
 
 - 云同步正常时进度在 Supabase 云端，多设备共享；但仍建议偶尔点「导出」留一份 JSON 备份
 - 看板「导入」为合并模式，不会覆盖已有记录
@@ -286,7 +184,7 @@ node tests/turntable_app_test.js
 
 ---
 
-## 八、后续可以继续扩展
+## 七、后续可以继续扩展
 
 - 在 `data/tasks.js` 中补充更多目录层级或新增学科
 - 在 `js/turntable/core.js` 的 `WHEEL` 中调整抽签时长分布
