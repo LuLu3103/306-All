@@ -174,8 +174,10 @@ test("顶栏快捷入口：两个学习站外链 + 使用说明", () => {
   );
   assert.match(html, /href="https:\/\/rray1228\.github\.io\/neike-306-tiku\/\?view=mnemonics"/);
 
+  assert.match(html, /href="https:\/\/github\.com\/LuLu3103\/306-All"/);
+
   const links = [...html.matchAll(/<a\s+class="link-btn"[\s\S]*?<\/a>/g)];
-  assert.strictEqual(links.length, 2);
+  assert.strictEqual(links.length, 3);
   links.forEach((link) => {
     assert.match(link[0], /target="_blank"/);
     assert.match(link[0], /rel="noopener noreferrer"/);

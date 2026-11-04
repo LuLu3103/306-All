@@ -57,6 +57,30 @@
               <line x1="10" y1="14" x2="21" y2="3"></line>
             </svg>
           </a>
+
+          <a class="link-btn" href="https://github.com/LuLu3103/306-All"
+             target="_blank" rel="noopener noreferrer" title="打开 GitHub 仓库（新窗口）">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.78 2.71 1.27 3.37.97.1-.75.4-1.27.73-1.56-2.56-.29-5.25-1.28-5.25-5.72 0-1.26.45-2.3 1.2-3.11-.12-.3-.52-1.48.12-3.08 0 0 .97-.31 3.18 1.19a11 11 0 0 1 5.8 0c2.2-1.5 3.17-1.19 3.17-1.19.64 1.6.24 2.78.12 3.08.75.81 1.2 1.85 1.2 3.11 0 4.45-2.7 5.42-5.27 5.71.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"></path>
+            </svg>
+            <span class="link-btn__text">GitHub</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+
+          <button class="link-btn link-btn--guide" id="btnGuide" type="button" title="查看网站使用说明">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.33c-.6.27-.9.8-.9 1.47v.4"></path>
+              <path d="M12 17h.01"></path>
+            </svg>
+            <span class="link-btn__text">使用说明</span>
+          </button>
         </div>
 
         <!-- 云同步状态 -->
@@ -64,6 +88,15 @@
           <button class="sync-chip" id="syncChip" type="button" data-status="unconfigured" title="云同步状态">
             <span class="sync-dot" aria-hidden="true"></span>
             <span id="syncText">云同步</span>
+          </button>
+          <button class="sync-code-btn" id="btnShowSyncCode" type="button" title="查看本机保存的云同步码">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="8" cy="15" r="4"></circle>
+              <path d="M10.8 12.2 20 3"></path>
+              <path d="M16 7l3 3"></path>
+            </svg>
+            <span>同步码</span>
           </button>
         </div>
 
@@ -435,6 +468,25 @@
 
       <p class="auth-msg" id="syncError" hidden></p>
 
+      <div class="sync-code-card" id="syncCodeCard" hidden>
+        <div class="sync-code-card__head">
+          <span>当前同步码（本机已保存）</span>
+          <span class="sync-code-card__badge">记住它，换设备要用</span>
+        </div>
+        <code class="sync-code-card__value" id="syncCodeValue">—</code>
+        <div class="sync-code-card__actions">
+          <button class="chip-btn" id="btnRevealSyncCode" type="button">显示</button>
+          <button class="chip-btn" id="btnCopySyncCode" type="button">复制同步码</button>
+        </div>
+      </div>
+
+      <p class="sync-code-empty" id="syncCodeEmpty" hidden>
+        本机还没有保存同步码。如果之前在别的设备 / 浏览器连接过，请到那台设备打开本页查看；
+        也可以在 Supabase 的 SQL Editor 里执行
+        <code>select code from public.boards;</code>
+        找回（以 <code>#turntable</code> 结尾的是转盘记录，取前面的部分就是同步码）。
+      </p>
+
       <div class="sync-actions">
         <button class="auth-submit" id="btnConnect" type="button">连接并同步</button>
         <button class="chip-btn" id="btnGenCode" type="button">生成随机码</button>
@@ -533,6 +585,62 @@ grant execute on function public.save_board(text, jsonb) to anon, authenticated;
         <code>load_board</code> / <code>save_board</code> 两个函数按同步码访问，所以请把同步码当成密码保管。
         请勿把 <code>service_role</code> 密钥写进前端。
       </p>
+    </div>
+  </div>
+
+  <!-- ==================== 网站使用说明（看板 / 转盘 / 云同步） ==================== -->
+  <div class="modal modal--guide" id="guideModal" hidden>
+    <div class="modal__backdrop" data-close-modal="guideModal"></div>
+    <div class="modal__panel modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+      <button class="modal__close" id="btnGuideClose" type="button" aria-label="关闭使用说明">×</button>
+      <h2 class="modal__title" id="guideTitle">使用说明</h2>
+      <p class="modal__sub">一分钟了解这个网站：进度看板、学习转盘、云同步。</p>
+
+      <div class="guide-tabs" role="tablist" aria-label="使用说明分类">
+        <button class="guide-tab is-active" id="guideTabBoard" type="button" role="tab"
+                aria-selected="true" data-guide-tab="board">进度看板</button>
+        <button class="guide-tab" id="guideTabWheel" type="button" role="tab"
+                aria-selected="false" data-guide-tab="wheel">学习转盘</button>
+        <button class="guide-tab" id="guideTabSync" type="button" role="tab"
+                aria-selected="false" data-guide-tab="sync">云同步</button>
+      </div>
+
+      <div class="guide-panel" id="guidePanelBoard" data-guide-panel="board">
+        <ol class="guide-list">
+          <li><b>选学科</b><span>点顶栏「生理 / 病理 / 内科 / 外科 / 生化」，或按数字键 <code>1</code>~<code>5</code> 快速切换。</span></li>
+          <li><b>标记完成</b><span>点击任务行或左侧复选框即可打勾，进度、章节完成数和总进度会实时刷新，并自动同步到云端。</span></li>
+          <li><b>找任务</b><span>用功能栏的搜索框按关键词或页码查找；「隐藏已完成」只看没做的；「全部展开 / 收起」批量控制章节。</span></li>
+          <li><b>看统计</b><span>点顶栏「统计 XX%」展开统计面板：总进度环、已完成 / 剩余、五个学科进度与剩余数量。再点一次或按 Esc 收起。</span></li>
+          <li><b>备份</b><span>顶栏「导出」保存 JSON 备份；「导入」合并记录；「重置」清空全部完成记录（云端同步时云端也会清空）。</span></li>
+          <li><b>记住学科</b><span>地址栏会带上 <code>#学科id</code>，刷新后仍停在这个学科。</span></li>
+        </ol>
+      </div>
+
+      <div class="guide-panel" id="guidePanelWheel" data-guide-panel="wheel" hidden>
+        <ol class="guide-list">
+          <li><b>进入转盘</b><span>点顶栏「学习转盘」切换；也可以直接收藏网址加 <code>#wheel</code>，打开就是转盘页。</span></li>
+          <li><b>抽任务</b><span>点「抽取学习任务」或转盘中心按钮。抽到学习任务后必须等倒计时结束才能再抽；抽到休息任务可点「跳过休息」继续。</span></li>
+          <li><b>任务与打卡</b><span>抽到的时长自动记入任务栏；可勾选完成、删除单条、清空当日。用工具栏日期选择器可查看往日记录（只读）。</span></li>
+          <li><b>统计与图表</b><span>统计栏支持今日 / 近 7 天 / 近 30 天；点「生成统计图表」可看环形图与柱状图，并「保存图表 PNG」。</span></li>
+          <li><b>数据备份</b><span>转盘页的「导出数据 / 导入数据」只作用于转盘记录；「清空全部数据」也只清空转盘，不影响看板进度。</span></li>
+        </ol>
+      </div>
+
+      <div class="guide-panel" id="guidePanelSync" data-guide-panel="sync" hidden>
+        <ol class="guide-list">
+          <li><b>不用注册</b><span>数据存在你自己的 Supabase 项目里，不需要账号密码；同步码就是钥匙，看板与转盘共用同一个码。</span></li>
+          <li><b>首次连接</b><span>点顶栏「设置同步码」→ 弹窗会自动填好一个随机码 → 点「连接并同步」→ 把这个码记下来。</span></li>
+          <li><b>换设备</b><span>在新手机 / 电脑打开同一网址，点「设置同步码」填入同一个同步码即可继续。</span></li>
+          <li><b>保存方式</b><span>勾选任务、抽签、打卡后会自动写回云端（约 0.6 秒防抖），顶栏显示「已同步」即成功；点一下同步状态可立即拉取云端最新数据。</span></li>
+          <li><b>找回同步码</b><span>忘了码？点顶栏「同步码」按钮可直接查看 / 复制本机保存的码（默认打码，点「显示」展开）。若换过浏览器或清过缓存，请到之前连接过的设备查看，或在 Supabase SQL Editor 执行 <code>select code from public.boards;</code> 找回（去掉结尾的 <code>#turntable</code> 即看板同步码）。</span></li>
+          <li><b>断开与安全</b><span>「断开本机同步」只清空本机显示、云端数据保留；同步码相当于密码，请不要公开。</span></li>
+        </ol>
+      </div>
+
+      <div class="modal__hint guide-footer">
+        <span>进度看板 · 学习转盘 · 云端同步</span>
+        <span>点击右上角 × 或按 Esc 关闭</span>
+      </div>
     </div>
   </div>
 

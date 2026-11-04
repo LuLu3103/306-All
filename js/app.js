@@ -12,6 +12,8 @@
   var DATA = window.TASKS_DATA;
   var RING_CIRCUMFERENCE = 326.73;
 
+  var syncCodeRevealed = false;
+
   var state = {
     done: new Set(),
     collapsed: new Set(),
@@ -209,6 +211,33 @@
     }
   }
 
+  function positionStatsPopover() {
+    var panel = statsPopover();
+    if (!panel || panel.hidden) return;
+
+    var viewportWidth = window.innerWidth || 1280;
+    var viewportHeight = window.innerHeight || 800;
+    var bar = document.querySelector('.topbar');
+    var inner = document.querySelector('.topbar__inner');
+    var barRect = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : { bottom: 0 };
+    var innerRect = inner && inner.getBoundingClientRect ? inner.getBoundingClientRect() : { right: viewportWidth - 28 };
+
+    // 顶栏是 sticky 且有 backdrop-filter，fixed 会被它当包含块，所以用 absolute
+    var headerHeight = Math.round((barRect.height || 72) + 10);
+    var headerTop = Math.round(barRect.top || 0);
+    var right = Math.round(Math.max(12, viewportWidth - innerRect.right));
+    var width = Math.max(220, Math.min(420, viewportWidth - right - 12));
+    var maxHeight = Math.max(220, viewportHeight - headerTop - headerHeight - 16);
+
+    panel.style.position = 'absolute';
+    panel.style.top = headerHeight + 'px';
+    panel.style.right = right + 'px';
+    panel.style.left = 'auto';
+    panel.style.width = width + 'px';
+    panel.style.maxHeight = maxHeight + 'px';
+    panel.style.overflowY = 'auto';
+  }
+
   function toggleStatsPopover() {
     var panel = statsPopover();
     if (!panel) return;
@@ -219,9 +248,35 @@
         btn.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
       }
+      positionStatsPopover();
     } else {
       closeStatsPopover();
     }
+  }
+
+  /* ---------------- 使用说明弹窗 ---------------- */
+
+  function switchGuideTab(tab) {
+    var tabs = [
+      ['#guideTabBoard', 'board'],
+      ['#guideTabWheel', 'wheel'],
+      ['#guideTabSync', 'sync']
+    ];
+    tabs.forEach(function (pair) {
+      var btn = $(pair[0]);
+      var panel = $('#guidePanel' + pair[1].charAt(0).toUpperCase() + pair[1].slice(1));
+      var active = pair[1] === tab;
+      if (btn) {
+        btn.classList.toggle('is-active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+      if (panel) panel.hidden = !active;
+    });
+  }
+
+  function openGuide(tab) {
+    switchGuideTab(tab || (state.view === 'wheel' ? 'wheel' : 'board'));
+    openModal('guideModal');
   }
 
   function switchView(view) {
@@ -552,12 +607,52 @@
       ? ('同步码：' + maskCode(code) + '（点击立即同步）')
       : (st === 'unconfigured' ? '点击查看 Supabase 配置指南' : '点击设置同步码');
 
+    renderSyncCodeCard();
+
     if (window.Turntable && typeof Turntable.updateCloudNote === 'function') {
       Turntable.updateCloudNote();
     }
   }
 
-  function openSyncModal() {
+  function renderSyncCodeCard() {
+    var card = $('#syncCodeCard');
+    var empty = $('#syncCodeEmpty');
+    var value = $('#syncCodeValue');
+    var revealBtn = $('#btnRevealSyncCode');
+    if (!card || !empty || !value) return;
+
+    var code = window.Cloud ? Cloud.getCode() : '';
+    if (code) {
+      card.hidden = false;
+      empty.hidden = true;
+      value.textContent = syncCodeRevealed ? code : maskCode(code);
+      if (revealBtn) revealBtn.textContent = syncCodeRevealed ? '隐藏' : '显示';
+    } else {
+      card.hidden = true;
+      empty.hidden = false;
+      syncCodeRevealed = false;
+      value.textContent = '—';
+    }
+  }
+
+  function copySyncCode(button) {
+    var code = window.Cloud ? Cloud.getCode() : '';
+    if (!code) return;
+    var done = function () {
+      if (!button) return;
+      var original = button.textContent;
+      button.textContent = '已复制';
+      setTimeout(function () { button.textContent = original; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done).catch(done);
+    } else {
+      done();
+    }
+  }
+
+  function openSyncModal(showCode) {
+    syncCodeRevealed = Boolean(showCode);
     var input = $('#syncCodeInput');
     var err = $('#syncError');
     var disconnectBtn = $('#btnDisconnect');
@@ -567,6 +662,7 @@
     if (input) input.value = currentCode || (window.Cloud ? Cloud.randomCode() : '');
     if (err) { err.hidden = true; err.textContent = ''; }
     if (disconnectBtn) disconnectBtn.hidden = !(window.Cloud && Cloud.getCode());
+    renderSyncCodeCard();
 
     openModal('syncModal');
     setTimeout(function () {
@@ -885,11 +981,35 @@
     $('#viewBoardBtn').addEventListener('click', function () { switchView('board'); });
     $('#viewWheelBtn').addEventListener('click', function () { switchView('wheel'); });
 
+    // 使用说明
+    var showCodeBtn = $('#btnShowSyncCode');
+    if (showCodeBtn) showCodeBtn.addEventListener('click', function () { openSyncModal(true); });
+    var revealCodeBtn = $('#btnRevealSyncCode');
+    if (revealCodeBtn) {
+      revealCodeBtn.addEventListener('click', function () {
+        syncCodeRevealed = !syncCodeRevealed;
+        renderSyncCodeCard();
+      });
+    }
+    var copyCodeBtn = $('#btnCopySyncCode');
+    if (copyCodeBtn) copyCodeBtn.addEventListener('click', function () { copySyncCode(copyCodeBtn); });
+
+    var guideBtn = $('#btnGuide');
+    if (guideBtn) guideBtn.addEventListener('click', function () { openGuide(); });
+    var guideClose = $('#btnGuideClose');
+    if (guideClose) guideClose.addEventListener('click', function () { closeModal('guideModal'); });
+    [['#guideTabBoard', 'board'], ['#guideTabWheel', 'wheel'], ['#guideTabSync', 'sync']].forEach(function (pair) {
+      var tab = $(pair[0]);
+      if (tab) tab.addEventListener('click', function () { switchGuideTab(pair[1]); });
+    });
+
     // 统计下拉面板
     var statsBtn = $('#btnStatsToggle');
     if (statsBtn) statsBtn.addEventListener('click', toggleStatsPopover);
     var statsClose = $('#btnStatsClose');
     if (statsClose) statsClose.addEventListener('click', closeStatsPopover);
+    window.addEventListener('resize', function () { positionStatsPopover(); });
+    window.addEventListener('orientationchange', function () { positionStatsPopover(); });
     document.addEventListener('click', function (e) {
       var panel = statsPopover();
       if (!panel || panel.hidden) return;

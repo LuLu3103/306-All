@@ -197,7 +197,12 @@ const SKELETONS = [
   ['openSetupFromSync', 'button'], ['setupModal', 'div'], ['toast', 'div'],
   ['viewBoardBtn', 'button'], ['viewWheelBtn', 'button'],
   ['boardView', 'main'], ['wheelView', 'main'], ['boardFooter', 'footer'],
-  ['btnStatsToggle', 'button'], ['statsPopover', 'div'], ['statsToggleText', 'span'], ['btnStatsClose', 'button']
+  ['btnStatsToggle', 'button'], ['statsPopover', 'div'], ['statsToggleText', 'span'], ['btnStatsClose', 'button'],
+  ['btnShowSyncCode', 'button'], ['syncCodeCard', 'div'], ['syncCodeValue', 'code'],
+  ['btnRevealSyncCode', 'button'], ['btnCopySyncCode', 'button'], ['syncCodeEmpty', 'p'],
+  ['btnGuide', 'button'], ['guideModal', 'div'], ['btnGuideClose', 'button'],
+  ['guideTabBoard', 'button'], ['guideTabWheel', 'button'], ['guideTabSync', 'button'],
+  ['guidePanelBoard', 'div'], ['guidePanelWheel', 'div'], ['guidePanelSync', 'div']
 ];
 
 function makeContext(options) {
@@ -392,6 +397,23 @@ async function scenarioA() {
   doc.querySelector('#btnStatsToggle').dispatchEvent(new Event('click'));
   ctx.document.dispatchEvent(new Event('click'));
   check('点面板外可收起', doc.querySelector('#statsPopover').hidden, true);
+
+  console.log('\n[A6] 使用说明弹窗');
+  doc.querySelector('#btnGuide').dispatchEvent(new Event('click'));
+  check('打开使用说明', doc.querySelector('#guideModal').hidden, false);
+  check('默认显示看板说明', doc.querySelector('#guidePanelBoard').hidden, false);
+  check('转盘说明隐藏', doc.querySelector('#guidePanelWheel').hidden, true);
+  doc.querySelector('#guideTabWheel').dispatchEvent(new Event('click'));
+  check('切换到转盘说明', doc.querySelector('#guidePanelWheel').hidden, false);
+  check('看板说明隐藏', doc.querySelector('#guidePanelBoard').hidden, true);
+  check('转盘 tab 激活', doc.querySelector('#guideTabWheel').classList.contains('is-active'), true);
+  doc.querySelector('#btnGuideClose').dispatchEvent(new Event('click'));
+  check('关闭使用说明', doc.querySelector('#guideModal').hidden, true);
+
+  doc.querySelector('#viewWheelBtn').dispatchEvent(new Event('click'));
+  doc.querySelector('#btnGuide').dispatchEvent(new Event('click'));
+  check('转盘视图点说明默认显示转盘页', doc.querySelector('#guidePanelWheel').hidden, false);
+  doc.querySelector('#viewBoardBtn').dispatchEvent(new Event('click'));
 }
 
 /* ---------------- 场景 B：同步码云同步（模拟 Supabase） ---------------- */
@@ -446,6 +468,15 @@ async function scenarioB() {
   check('连接后状态已同步', doc.querySelector('#syncText').textContent, '已同步');
   check('同步码已保存到本机', ctx.__storage.get('xizong-board.sync-code.v1'), 'TESTCODE123');
 
+  console.log('\n[B1+] 查看 / 复制本机同步码');
+  doc.querySelector('#btnShowSyncCode').dispatchEvent(new Event('click'));
+  check('同步码卡片显示', doc.querySelector('#syncCodeCard').hidden, false);
+  check('展示完整同步码', doc.querySelector('#syncCodeValue').textContent, 'TESTCODE123');
+  doc.querySelector('#btnRevealSyncCode').dispatchEvent(new Event('click'));
+  check('点隐藏后打码', doc.querySelector('#syncCodeValue').textContent, 'TEST••••23');
+  doc.querySelector('#btnRevealSyncCode').dispatchEvent(new Event('click'));
+  check('再点显示恢复完整', doc.querySelector('#syncCodeValue').textContent, 'TESTCODE123');
+
   console.log('\n[B2] 勾选后写入云端');
   const firstTask = doc.querySelectorAll('#taskList .task')[0];
   const cb = firstTask.querySelector('input');
@@ -464,6 +495,8 @@ async function scenarioB() {
   check('断开后状态未连接', disconnected, true);
   check('断开后本页数据清空', doc.querySelector('#totalDone').textContent, '0');
   check('本机同步码已清除', ctx.__storage.get('xizong-board.sync-code.v1'), undefined);
+  check('断开后同步码卡片隐藏', doc.querySelector('#syncCodeCard').hidden, true);
+  check('断开后显示找回提示', doc.querySelector('#syncCodeEmpty').hidden, false);
 
   console.log('\n[B4] 再次连接同一同步码可恢复');
   doc.querySelector('#syncChip').dispatchEvent(new Event('click'));
