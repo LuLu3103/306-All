@@ -839,6 +839,27 @@ input { font-family: inherit; }
   letter-spacing: 0.4px;
 }
 
+.footer-line {
+  line-height: 1.7;
+}
+
+/* 页脚访客统计（今日访客 / 总访客） */
+.footer-visits {
+  margin-top: 7px;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.footer-visits b {
+  margin: 0 2px;
+  color: var(--ink-500);
+  font-weight: 600;
+}
+
+.footer-dot {
+  margin: 0 9px;
+}
+
 /* ---------------- 响应式 ---------------- */
 
 @media (max-width: 1180px) {

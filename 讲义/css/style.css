@@ -165,6 +165,13 @@ html, body {
 }
 .side-foot p { margin: 5px 0; }
 .side-foot b { color: #cbd5e1; }
+.side-foot-visits {
+  margin-top: 10px !important;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, .12);
+  font-variant-numeric: tabular-nums;
+}
+.side-foot-visits b { color: #d1fae5; }
 .badge-mini {
   font-size: 10px;
   color: #d1fae5;
