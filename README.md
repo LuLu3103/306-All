@@ -121,77 +121,6 @@ window.TASKS_DATA = {
 
 ## 三、Supabase 云同步设置（免登录 · 约 3 分钟）
 
-不需要注册 / 登录账号，数据放在你自己的 Supabase 项目里。**看板和转盘共用这一套配置与同步码。**
-前端直接用浏览器 `fetch` 调用 `load_board` / `save_board` 两个 RPC（不需要加载任何 CDN 脚本，网络不稳也不会影响页面打开）。
-
-1. 打开 https://supabase.com 登录（用现有账号即可），点 **New project** 新建一个项目，等待初始化完成。
-2. 在 **Project Settings → API** 找到并复制两个值：
-   - `Project URL`，形如 `https://abcdefghijklmn.supabase.co`
-   - `anon public` / `publishable` 密钥，形如 `eyJhbGciOi...` 或 `sb_publishable_...`
-3. 打开 **SQL Editor**，新建查询，粘贴执行下面整段 SQL：
-
-```sql
--- 1) 存放进度的表：一行 = 一个同步码
-create table if not exists public.boards (
-  code text primary key,
-  progress jsonb not null default '[]'::jsonb,
-  updated_at timestamptz not null default now()
-);
-
--- 2) 表本身不对外开放，只允许通过下面的函数读写
-alter table public.boards enable row level security;
-
--- 3) 读取某个同步码的进度
-create or replace function public.load_board(p_code text)
-returns jsonb
-language sql
-security definer
-set search_path = public
-as $$
-  select coalesce(progress, '[]'::jsonb) from boards where code = p_code;
-$$;
-
--- 4) 保存某个同步码的进度（不存在就创建）
-create or replace function public.save_board(p_code text, p_progress jsonb)
-returns void
-language sql
-security definer
-set search_path = public
-as $$
-  insert into boards (code, progress, updated_at)
-  values (p_code, coalesce(p_progress, '[]'::jsonb), now())
-  on conflict (code) do update
-    set progress = excluded.progress,
-        updated_at = now();
-$$;
-
--- 5) 只允许匿名前端调用这两个函数
-revoke all on function public.load_board(text) from public;
-revoke all on function public.save_board(text, jsonb) from public;
-grant execute on function public.load_board(text) to anon, authenticated;
-grant execute on function public.save_board(text, jsonb) to anon, authenticated;
-```
-
-4. 把 URL 和 anon key 填进 `js/supabase-config.js`：
-
-```js
-window.SUPABASE_CONFIG = {
-  url: 'https://你的项目编号.supabase.co',
-  anonKey: '你的 anon public key'
-};
-```
-
-5. 刷新页面，点顶栏的「**设置同步码**」→ 弹窗会自动填好一个随机码 → 点「**连接并同步**」即可。
-   - 第一次会创建这个同步码对应的云端记录
-   - 把同步码记下来（备忘录 / 截图都行；也可以点「生成随机码」换一个）
-6. 在手机、另一台电脑上打开同一页面，填入**同一个同步码** → 连接，即可看到同一份看板与转盘记录。
-
-存储方式（不需要额外建表）：
-
-- 看板进度存在该同步码对应的行里（`progress` 为已完成任务 id 数组）
-- 转盘记录存在同一张表、同一个同步码加后缀 `#turntable` 的行里（`progress` 为 `{ version, updatedAt, days }` 对象）
-- 两者由前端自动区分，云端只多一行数据
-
 使用说明：
 
 - 之后每次勾选 / 抽签 / 打卡都会自动写回云端（约 0.6 秒防抖），顶栏显示「已同步」即写入成功
@@ -230,59 +159,7 @@ python serve.py 8787
 
 ---
 
-## 五、部署到 GitHub Pages
-
-讲义阅读器整合进站点后，`讲义/` 也要一起部署，线上点页码才能看到 PDF。
-
-### 体积说明（重要）
-
-| 项目 | 大小 |
-| --- | --- |
-| 看板 + 转盘代码 | < 1 MB |
-| `讲义/assets/` 7 个 PDF 分册 | 约 370 MB |
-
-- GitHub **单个文件上限 100MB**：生理原始单本 146MB、外科上/下 129/132MB，所以已拆成
-  `physiology-1/2.pdf`、`surgery1/2.pdf`（外科仍分上/下两册，生理拆成上/下两册），
-  现在 7 个分册都小于 100MB，可以直接提交
-- 原始整本 PDF 放在 `讲义/assets-original/`，**已在 `.gitignore` 中排除**，不参与部署；只在本地保留
-- GitHub Pages 站点总量上限 1GB，本站约 370MB，余量充足
-- 首次推送约 370MB，会慢一些；之后只推送改动的文件
-
-### 方式 A：Actions 自动部署（推荐）
-
-仓库里的 `.github/workflows/pages.yml` 会在推送 `main` 后自动打包 `index.html`、`css/`、`js/`、`data/`、`讲义/` 并发布：
-
-1. 在 GitHub 新建仓库并推送本项目（**用 GitHub Desktop 或 git 命令**；网页上传单文件上限 25MB，无法上传 PDF）
-2. 仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**
-3. 推送 `main` 分支（或手动运行工作流），等待部署完成
-4. 访问 `https://<用户名>.github.io/<仓库名>/`，点看板页码即可打开线上讲义页
-
-工作流会额外打印 `讲义/assets` 的体积，并检查有没有超过 95MB 的文件，方便提前发现 GitHub 限制问题。
-
-### 方式 B：手动上传（只适合不带 PDF 的轻量版）
-
-网页上传不支持大文件，所以只上传站点代码：
-
-1. 新建仓库，只上传站点文件（保持目录结构）：
-   - `index.html`、`css/`、`js/`、`data/`、`.nojekyll`
-2. **Settings → Pages → Source** 选择 **Deploy from a branch**，分支选 `main`、目录选 `/ (root)`
-3. 访问 `https://<用户名>.github.io/<仓库名>/`（看板功能完整，但点页码会提示讲义 PDF 未部署）
-
-### 更新讲义的流程
-
-- **只换 PDF 内容、章节和页数不变**：把新的 PDF 分册直接覆盖 `讲义/assets/` 里对应文件即可
-  （生理两册分别覆盖 `physiology-1.pdf`、`physiology-2.pdf`；外科 `surgery1.pdf` = 上册、`surgery2.pdf` = 下册）。
-  改完双击 `启动网站.cmd` 在本地翻几页确认，再推送 GitHub。
-- **章节或页码有变化**：需要同步重建 `讲义/data/toc-data.js` 的页码映射。
-  重建脚本在本机工作区的 `web/tools/` 里（`build_toc_all.py`、`split_pdfs.py`、`repair_surgery_toc.py`），
-  不是日常操作；改动前先把 `data/toc-data.js` 备份一份。
-
-> 注意：`js/supabase-config.js` 里只有可公开的 `anon key`，可以放心提交；
-> **不要**把 `目录/` 原图、`讲义/assets-original/` 原始整本 PDF 提交到 GitHub。
-
----
-
-## 六、目录结构
+## 五、目录结构
 
 ```
 .
@@ -336,7 +213,7 @@ node tests/turntable_app_test.js
 
 ---
 
-## 七、备份与恢复
+## 六、备份与恢复
 
 - 云同步正常时进度在 Supabase 云端，多设备共享；但仍建议偶尔点「导出」留一份 JSON 备份
 - 看板「导入」为合并模式，不会覆盖已有记录
@@ -345,7 +222,7 @@ node tests/turntable_app_test.js
 
 ---
 
-## 八、后续可以继续扩展
+## 七、后续可以继续扩展
 
 - 在 `data/tasks.js` 中补充更多目录层级或新增学科
 - 在 `js/turntable/core.js` 的 `WHEEL` 中调整抽签时长分布
