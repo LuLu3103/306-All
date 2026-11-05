@@ -354,6 +354,29 @@ input { font-family: inherit; }
   background: var(--blue-50);
 }
 
+/* 功能栏「打开讲义」链接按钮 */
+.chip-btn--lecture {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--blue-700);
+  border-color: var(--blue-100);
+  background: var(--blue-50);
+}
+
+.chip-btn--lecture::after {
+  content: "↗";
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.chip-btn--lecture:hover {
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: #fff;
+}
+
 .chip-btn[aria-pressed="true"] {
   background: var(--blue-600);
   border-color: var(--blue-600);
@@ -570,6 +593,31 @@ input { font-family: inherit; }
   color: var(--ink-600);
   font-variant-numeric: tabular-nums;
 }
+
+/* 页码即讲义链接：点击在新窗口打开对应讲义页 */
+.badge--page-link {
+  text-decoration: none;
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+
+.badge--page-link::after {
+  content: "↗";
+  font-size: 9px;
+  margin-left: 3px;
+  opacity: 0.65;
+}
+
+.badge--page-link:hover,
+.badge--page-link:focus-visible {
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: #fff;
+  box-shadow: 0 6px 14px -8px rgba(37, 99, 235, 0.8);
+}
+
+.badge--page-link:hover::after,
+.badge--page-link:focus-visible::after { opacity: 1; }
 
 .badge--chapter { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
 

@@ -58,6 +58,22 @@
             </svg>
           </a>
 
+          <a class="link-btn link-btn--lecture" id="btnLecture" href="讲义/index.html"
+             target="_blank" rel="noopener noreferrer" title="打开西综讲义（目录页码跳转，新窗口）">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+            <span class="link-btn__text">讲义</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+
           <a class="link-btn" href="https://github.com/LuLu3103/306-All"
              target="_blank" rel="noopener noreferrer" title="打开 GitHub 仓库（新窗口）">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -175,6 +191,8 @@
           <span class="panel__meta" id="subjectMeta">—</span>
         </div>
         <div class="panel__tools">
+          <a class="chip-btn chip-btn--lecture" id="lectureSubjectLink" href="讲义/index.html#s=physiology"
+             target="_blank" rel="noopener noreferrer" title="打开当前学科的讲义（新窗口）">打开讲义</a>
           <label class="search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -609,6 +627,7 @@ grant execute on function public.save_board(text, jsonb) to anon, authenticated;
         <ol class="guide-list">
           <li><b>选学科</b><span>点顶栏「生理 / 病理 / 内科 / 外科 / 生化」，或按数字键 <code>1</code>~<code>5</code> 快速切换。</span></li>
           <li><b>标记完成</b><span>点击任务行或左侧复选框即可打勾，进度、章节完成数和总进度会实时刷新，并自动同步到云端。</span></li>
+          <li><b>看讲义</b><span>点任务右侧的蓝色页码 <code>P12</code>，或功能栏「打开讲义」，会在新窗口打开讲义对应页；讲义里的页码与看板 <code>P12</code> 完全一致，并可直接点左侧目录跳转。生理、外科各分上/下册，阅读器里可切换分册。</span></li>
           <li><b>找任务</b><span>用功能栏的搜索框按关键词或页码查找；「隐藏已完成」只看没做的；「全部展开 / 收起」批量控制章节。</span></li>
           <li><b>看统计</b><span>点顶栏「统计 XX%」展开统计面板：总进度环、已完成 / 剩余、五个学科进度与剩余数量。再点一次或按 Esc 收起。</span></li>
           <li><b>备份</b><span>顶栏「导出」保存 JSON 备份；「导入」合并记录；「重置」清空全部完成记录（云端同步时云端也会清空）。</span></li>
@@ -638,7 +657,7 @@ grant execute on function public.save_board(text, jsonb) to anon, authenticated;
       </div>
 
       <div class="modal__hint guide-footer">
-        <span>进度看板 · 学习转盘 · 云端同步</span>
+        <span>进度看板 · 学习转盘 · 讲义阅读 · 云端同步</span>
         <span>点击右上角 × 或按 Esc 关闭</span>
       </div>
     </div>

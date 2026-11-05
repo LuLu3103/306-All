@@ -26,7 +26,21 @@ jobs:
           mkdir -p dist
           cp index.html dist/
           cp -r css js data dist/
+          # 讲义阅读页（含拆分后的 PDF 分册）；体积较大，检查仓库是否已提交 assets
+          if [ -d 讲义 ]; then
+            cp -r 讲义 dist/
+          else
+            echo "::warning::缺少 讲义/ 目录，线上讲义阅读将不可用"
+          fi
+          # 原始 PDF 备份只在本机保留，不参与部署
+          rm -rf dist/讲义/assets-original
           touch dist/.nojekyll
+
+      - name: Check deployed PDF sizes
+        run: |
+          echo "== 讲义资源体积 =="
+          du -sh dist/讲义/assets || true
+          find dist/讲义/assets -type f -size +95M -printf '过大文件: %p (%s bytes)\n' || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

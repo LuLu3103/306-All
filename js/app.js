@@ -60,6 +60,13 @@
 
   function chapterKey(subjectId, chapterId) { return subjectId + ':' + chapterId; }
 
+  /* 讲义阅读器地址：md 参数是讲义页码（与看板 Pxx 一致），阅读器会换算成 PDF 页 */
+  function lectureHref(subjectId, page) {
+    var url = '讲义/index.html#s=' + encodeURIComponent(subjectId);
+    if (page !== undefined && page !== null) url += '&md=' + page;
+    return url;
+  }
+
   function subjectStats(subject) {
     var total = 0, doneCount = 0, plusTotal = 0, plusDone = 0;
     subject.chapters.forEach(function (ch) {
@@ -290,6 +297,11 @@
     var st = subjectStats(subject);
     $('#subjectTitle').textContent = subject.name;
     $('#subjectMeta').textContent = '已完成 ' + st.done + ' / ' + st.total + ' 项 · 剩余 ' + st.left + ' 项';
+    var lectureLink = $('#lectureSubjectLink');
+    if (lectureLink) {
+      lectureLink.href = lectureHref(subject.id, null);
+      lectureLink.title = '打开《' + subject.name + '》讲义（新窗口）';
+    }
   }
 
   function itemMatches(item, query) {
@@ -331,7 +343,15 @@
 
     var kindBadge = kindBadgeNode(item);
     if (kindBadge) badges.appendChild(kindBadge);
-    if (item.page) badges.appendChild(span('badge badge--page', 'P' + item.page));
+    if (item.page) {
+      var pageLink = el('a', 'badge badge--page badge--page-link');
+      pageLink.href = lectureHref(state.currentSubjectId, item.page);
+      pageLink.target = '_blank';
+      pageLink.rel = 'noopener noreferrer';
+      pageLink.title = '打开讲义第 ' + item.page + ' 页（新窗口）';
+      pageLink.textContent = 'P' + item.page;
+      badges.appendChild(pageLink);
+    }
 
     row.appendChild(label);
     row.appendChild(name);
@@ -339,6 +359,7 @@
 
     row.addEventListener('click', function (e) {
       if (e.target && e.target.closest && e.target.closest('.task__check')) return;
+      if (e.target && e.target.closest && e.target.closest('.badge--page-link')) return;
       input.checked = !input.checked;
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });

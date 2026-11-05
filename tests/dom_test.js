@@ -197,6 +197,7 @@ const SKELETONS = [
   ['openSetupFromSync', 'button'], ['setupModal', 'div'], ['toast', 'div'],
   ['viewBoardBtn', 'button'], ['viewWheelBtn', 'button'],
   ['boardView', 'main'], ['wheelView', 'main'], ['boardFooter', 'footer'],
+  ['btnLecture', 'a'], ['lectureSubjectLink', 'a'],
   ['btnStatsToggle', 'button'], ['statsPopover', 'div'], ['statsToggleText', 'span'], ['btnStatsClose', 'button'],
   ['btnShowSyncCode', 'button'], ['syncCodeCard', 'div'], ['syncCodeValue', 'code'],
   ['btnRevealSyncCode', 'button'], ['btnCopySyncCode', 'button'], ['syncCodeEmpty', 'p'],
@@ -329,6 +330,16 @@ async function scenarioA() {
   check('云同步提示未配置', doc.querySelector('#syncText').textContent, '云同步未配置');
   check('同步状态标记', doc.querySelector('#syncChip').dataset.status, 'unconfigured');
 
+  console.log('\n[A1+] 讲义页码深链');
+  const pageLinks = doc.querySelectorAll('#taskList .badge--page-link');
+  check('生理页码链接数 59', pageLinks.length, 59);
+  check('页码链接地址（讲义 md 页码）', pageLinks[0].href, '讲义/index.html#s=physiology&md=1');
+  check('页码链接新窗口打开', pageLinks[0].target, '_blank');
+  check('页码链接提示文案', pageLinks[0].title, '打开讲义第 1 页（新窗口）');
+  check('功能栏「打开讲义」入口', doc.querySelector('#lectureSubjectLink').href, '讲义/index.html#s=physiology');
+  pageLinks[0].dispatchEvent(new Event('click', { bubbles: true }));
+  check('点页码不会误勾任务', doc.querySelector('#totalDone').textContent, '0');
+
   console.log('\n[A2] 勾选与统计（内存）');
   const firstTask = doc.querySelectorAll('#taskList .task')[0];
   const cb = firstTask.querySelector('input');
@@ -345,6 +356,8 @@ async function scenarioA() {
   check('内科 8 章', countChapters(doc), 8);
   check('内科 80 项', countTasks(doc), 80);
   check('hash 同步', ctx.__location.hash, '#internal');
+  check('切科后讲义入口更新', doc.querySelector('#lectureSubjectLink').href, '讲义/index.html#s=internal');
+  check('内科页码链接带上内科 id', doc.querySelectorAll('#taskList .badge--page-link')[0].href, '讲义/index.html#s=internal&md=1');
 
   const internalTask = doc.querySelectorAll('#taskList .task')[0];
   const internalCb = internalTask.querySelector('input');

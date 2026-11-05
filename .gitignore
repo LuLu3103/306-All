@@ -1,0 +1,22 @@
+# 本地 PDF 原件备份（体积大、且单本超过 GitHub 100MB 限制，不参与部署）
+# 需要重新拆分或校验时再使用；线上用的是 讲义/assets/ 里拆分后的分册
+讲义/assets-original/
+
+# 目录原图（仅本地参考，不参与部署）
+目录/
+
+# 本地工具缓存
+web/.npm-cache/
+web/.pip-cache/
+web/.pip-tmp/
+web/.pylibs/
+web/.pylibs-download/
+web/.tmp/
+web/.tmp-compress/
+web/.tmp-optimized/
+web/tools/node_modules/
+
+# 系统 / 编辑器临时文件
+Thumbs.db
+desktop.ini
+.DS_Store

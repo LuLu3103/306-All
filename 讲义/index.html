@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>西综讲义 · 5 科合集（目录页码跳转）</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar" aria-label="讲义目录">
+    <div class="side-head">
+      <div class="side-title">
+        <h1>西综讲义</h1>
+        <p>天天师兄 27 跟课版 · 5 科合集</p>
+      </div>
+      <button id="sideClose" class="icon-btn" title="收起目录" aria-label="收起目录">×</button>
+    </div>
+
+    <div id="subjects" class="subjects" role="tablist" aria-label="选择科目"></div>
+
+    <div id="volumes" class="volumes is-hidden" role="group" aria-label="分册切换"></div>
+
+    <div class="side-search">
+      <input id="tocFilter" type="search" placeholder="筛选章节，如：氨基酸" autocomplete="off">
+    </div>
+
+    <nav id="toc" class="toc"></nav>
+
+    <div class="side-foot">
+      <p><b>从看板点进来</b>：在进度看板点任意任务的 <span class="badge-mini">P12</span> 页码，会直接打开这里对应的讲义页。</p>
+      <p><b>页码说明</b>：目录左侧 <span class="badge-mini">p.41</span> 是 md 讲义页码（与看板页码一致），右侧小字是 PDF 实际页序。</p>
+      <p><b>分册</b>：外科学分上、下两册；生理学为方便线上部署拆成上、下两册（内容连续，页码不变）。选中这两科时，科目按钮下方会出现分册切换按钮，目录右侧小字会标注「上·」或「下·」。</p>
+      <p>合订 PDF 内含未编号的封面、目录、导图页和分隔页，因此 PDF 页码会比讲义页码大一些，点击目录会跳到正确的 PDF 页。</p>
+      <p>快捷键：<kbd>←</kbd> <kbd>→</kbd> 翻页，<kbd>[</kbd> <kbd>]</kbd> 切换科目，<kbd>Home</kbd>/<kbd>End</kbd> 跳首末页。</p>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="toolbar">
+      <button id="sideOpen" class="icon-btn" title="打开目录" aria-label="打开目录">☰</button>
+      <a id="backBoard" class="back-link" href="../index.html" title="返回西综看板">← 返回看板</a>
+      <span id="subjectLabel" class="subject-label">加载中…</span>
+      <div class="pager">
+        <button id="prevPage" class="icon-btn" title="上一页" aria-label="上一页">‹</button>
+        <span id="pageLabel" class="page-label">—</span>
+        <button id="nextPage" class="icon-btn" title="下一页" aria-label="下一页">›</button>
+      </div>
+      <form id="jumpForm" class="jump-form" autocomplete="off">
+        <input id="jumpInput" type="number" min="1" step="1" placeholder="PDF 页码">
+        <button type="submit">跳转</button>
+      </form>
+      <div class="toolbar-spacer"></div>
+      <span id="curSection" class="cur-section"></span>
+      <label class="zoom-label">缩放
+        <select id="zoomSelect">
+          <option value="fit">适应宽度</option>
+          <option value="0.6">60%</option>
+          <option value="0.8">80%</option>
+          <option value="1">100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+        </select>
+      </label>
+      <a id="rawPdf" class="raw-link" href="#" target="_blank" rel="noopener">原始 PDF</a>
+    </header>
+
+    <div id="scroller">
+      <div id="pages" class="pages"></div>
+      <div id="overlay" class="overlay">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="overlay-title" id="overlayTitle">正在加载讲义…</p>
+        <p class="overlay-sub" id="loadStatus">请稍候</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="scrim" class="scrim" hidden></div>
+
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="data/toc-data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
