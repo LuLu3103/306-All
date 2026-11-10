@@ -60,3 +60,9 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # 站点含 ~370MB 讲义 PDF 分册，默认 10 分钟（600000ms）会超时，
+          # 这里放宽到 30 分钟，避免 deploy 阶段报 "Timeout reached, aborting!"
+          timeout: 1800000
+          error_count: 20
+          reporting_interval: 10000
