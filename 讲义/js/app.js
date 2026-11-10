@@ -26,6 +26,12 @@
   var rawPdf = $('#rawPdf');
   var volumesHost = $('#volumes');
 
+  /* ---------------- 性能参数（按需加载的关键） ---------------- */
+  var PAGE_MAX_WIDTH = 1180;        // 单页最大显示宽度（CSS px）
+  var MAX_CANVAS_PIXELS = 4.2e6;    // 单页画布像素上限：控制单页渲染耗时与内存
+  var MAX_CONCURRENT_RENDERS = 2;   // 同时渲染的页数
+  var OBSERVER_MARGIN = '600px 0px'; // 视口外预渲染范围（越小越省流量）
+
   /* ---------------- state ---------------- */
   var state = {
     subjectId: null,
@@ -33,8 +39,10 @@
     vol: 0,
     doc: null,
     docTask: null,
-    pageProxies: [],
-    baseViewports: [],
+    pageProxies: [],      // 已取得元数据的页（懒加载）
+    pagePromises: [],     // 正在取的页
+    baseViewports: [],    // 每页原始尺寸（懒加载，未知时用 defaultViewport）
+    defaultViewport: null,
     wrappers: [],
     papers: [],
     canvases: [],
@@ -43,6 +51,8 @@
     renderTasks: [],
     renderScale: [],
     wantRender: [],
+    pending: [],          // 待渲染队列
+    rendering: 0,         // 正在渲染的数量
     sectionStart: {},
     sectionAtPage: [],
     tocButtons: [],
@@ -53,17 +63,27 @@
     saved: {},
     savedVol: {},
     loadToken: 0,
+    tops: [],             // 每页相对滚动容器的偏移（缓存，避免每次滚动算 rect）
+    topsDirty: true,
   };
 
+  /*
+   * 关键优化：disableAutoFetch + disableStream
+   *   默认配置下 pdf.js 会在后台把整本 PDF 连续下载完（内科 86MB → 打开一页要等 80MB+）。
+   *   关掉自动预取与流式整本传输后，只按 Range 取“当前页 + 目录索引”真正需要的数据。
+   * rangeChunkSize 16KB：PDF 的页面字典是零散分布的，每次都要按 chunk 对齐读取，
+   *   实测 64KB→12.7MB、16KB→3.8MB（生理上册首屏），而请求数几乎不变，所以取小块；
+   *   页面内容/图片流是按精确长度读取的，不受 chunk 大小影响。
+   */
   var PDFJS_OPTS = {
     cMapUrl: 'vendor/pdfjs/cmaps/',
     cMapPacked: true,
     useSystemFonts: true,
     isEvalSupported: false,
-    disableAutoFetch: false,
+    disableAutoFetch: true,
+    disableStream: true,
     disableRange: false,
-    disableStream: false,
-    rangeChunkSize: 65536,
+    rangeChunkSize: 16384,
   };
 
   /* ---------------- utils ---------------- */
@@ -84,11 +104,14 @@
     });
   }
 
+  function mb(bytes) { return (bytes / 1048576).toFixed(1); }
+
   function showOverlay(title, sub) {
     overlay.classList.remove('hidden', 'is-error');
     overlayTitle.textContent = title;
     loadStatus.textContent = sub || '';
-    overlay.querySelector('.spinner').style.display = '';
+    var sp = overlay.querySelector('.spinner');
+    if (sp) { sp.style.display = ''; }
   }
 
   function setOverlaySub(sub) { loadStatus.textContent = sub; }
@@ -100,7 +123,8 @@
     overlay.classList.add('is-error');
     overlayTitle.textContent = title;
     loadStatus.innerHTML = detail;
-    overlay.querySelector('.spinner').style.display = 'none';
+    var sp = overlay.querySelector('.spinner');
+    if (sp) { sp.style.display = 'none'; }
   }
 
   function subjectById(id) {
@@ -207,6 +231,10 @@
 
   function currentVolume() { return volumeOf(state.subject, state.vol); }
 
+  function totalPages(s) {
+    return s.volumes.reduce(function (n, v) { return n + v.pdfPageCount; }, 0);
+  }
+
   /* ---------------- subject tabs ---------------- */
   function buildSubjectTabs() {
     var frag = document.createDocumentFragment();
@@ -234,10 +262,6 @@
       var id = b.dataset.subject;
       if (id !== state.subjectId) { loadSubject(id, null, null); }
     });
-  }
-
-  function totalPages(s) {
-    return s.volumes.reduce(function (n, v) { return n + v.pdfPageCount; }, 0);
   }
 
   function renderVolumeSwitch() {
@@ -385,11 +409,7 @@
       try { state.observer.disconnect(); } catch (e) { /* ignore */ }
       state.observer = null;
     }
-    for (var i = 0; i < state.renderTasks.length; i++) {
-      if (state.renderTasks[i]) {
-        try { state.renderTasks[i].cancel(); } catch (e) { /* ignore */ }
-      }
-    }
+    cancelAllRenders();
     if (state.doc) {
       try { state.doc.destroy(); } catch (e) { /* ignore */ }
     }
@@ -399,7 +419,9 @@
     state.doc = null;
     state.docTask = null;
     state.pageProxies = [];
+    state.pagePromises = [];
     state.baseViewports = [];
+    state.defaultViewport = null;
     state.wrappers = [];
     state.papers = [];
     state.canvases = [];
@@ -408,18 +430,32 @@
     state.renderTasks = [];
     state.renderScale = [];
     state.wantRender = [];
+    state.pending = [];
+    state.rendering = 0;
+    state.tops = [];
+    state.topsDirty = true;
     state.generation += 1;
     pagesHost.innerHTML = '';
     pagesHost.style.width = '';
   }
 
+  function cancelAllRenders() {
+    for (var i = 0; i < state.renderTasks.length; i++) {
+      if (state.renderTasks[i]) {
+        try { state.renderTasks[i].cancel(); } catch (e) { /* ignore */ }
+      }
+      state.renderTasks[i] = null;
+    }
+  }
+
+  function pageRatioCss(vp) { return vp.width + ' / ' + vp.height; }
+
   function buildPages() {
-    var s = state.subject;
     var TOTAL = currentVolume().pdfPageCount;
+    var ratio = pageRatioCss(state.defaultViewport);
     var frag = document.createDocumentFragment();
     for (var i = 0; i < TOTAL; i++) {
       var pdfPage = i + 1;
-      var vp = state.baseViewports[i];
       var wrap = document.createElement('section');
       wrap.className = 'page';
       wrap.dataset.page = String(pdfPage);
@@ -441,13 +477,14 @@
 
       var paper = document.createElement('div');
       paper.className = 'page-paper';
-      paper.style.aspectRatio = vp.width + ' / ' + vp.height;
+      paper.dataset.ratio = ratio;
+      paper.style.aspectRatio = ratio;
       var canvas = document.createElement('canvas');
       canvas.width = 0;
       canvas.height = 0;
       var hint = document.createElement('div');
       hint.className = 'page-hint';
-      hint.textContent = '第 ' + pdfPage + ' 页（滚动到此处时渲染）';
+      hint.textContent = '第 ' + pdfPage + ' 页（滚动到此处时加载）';
       paper.appendChild(canvas);
       paper.appendChild(hint);
       wrap.appendChild(meta);
@@ -468,10 +505,15 @@
     setupObserver();
   }
 
+  /* ---------------- layout ---------------- */
+  function pageWidthPt(i) {
+    var vp = state.baseViewports[i] || state.defaultViewport;
+    return vp ? vp.width : 595.2;
+  }
+
   function fitScaleFor(i) {
-    var vp = state.baseViewports[i];
-    var avail = Math.max(200, pagesHost.clientWidth);
-    return Math.min(avail, 1180) / vp.width;
+    var avail = Math.max(200, pagesHost.clientWidth - 44);
+    return Math.min(avail, PAGE_MAX_WIDTH) / pageWidthPt(i);
   }
 
   function scaleFor(i) {
@@ -480,115 +522,190 @@
   }
 
   function applyLayout() {
+    var fixed = state.scaleMode === 'fit' ? null : parseFloat(state.scaleMode);
     var TOTAL = state.wrappers.length;
     for (var i = 0; i < TOTAL; i++) {
-      var vp = state.baseViewports[i];
       var paper = state.papers[i];
       var wrap = state.wrappers[i];
-      if (state.scaleMode === 'fit') {
-        wrap.style.width = '';
-        wrap.style.maxWidth = '';
-        paper.style.width = '100%';
-      } else {
-        var s = parseFloat(state.scaleMode);
-        var w = Math.round(vp.width * s);
+      if (fixed) {
+        var w = Math.round(pageWidthPt(i) * fixed);
         wrap.style.width = w + 'px';
         wrap.style.maxWidth = 'none';
         paper.style.width = w + 'px';
+      } else {
+        wrap.style.width = '';
+        wrap.style.maxWidth = '';
+        paper.style.width = '100%';
       }
-      paper.style.aspectRatio = vp.width + ' / ' + vp.height;
     }
+    // 缩放变化 → 所有已渲染画布作废，重新按新比例渲染可见页
+    cancelAllRenders();
     state.generation += 1;
     for (var j = 0; j < TOTAL; j++) {
-      if (state.renderTasks[j]) {
-        try { state.renderTasks[j].cancel(); } catch (e) { /* ignore */ }
-      }
-      state.renderTasks[j] = null;
+      if (state.renderedScale[j] > 0) { clearCanvas(j); }
       state.wantRender[j] = false;
-      state.renderedScale[j] = 0;
-      state.papers[j].classList.remove('is-rendered');
-      if (!state.canvases[j].width) { state.hints[j].textContent = '第 ' + (j + 1) + ' 页'; }
     }
-    renderVisible();
+    state.pending = [];
+    state.topsDirty = true;
   }
 
-  /* ---------------- render ---------------- */
+  function clearCanvas(idx) {
+    var paper = state.papers[idx];
+    var canvas = state.canvases[idx];
+    if (!paper || !canvas) { return; }
+    paper.classList.remove('is-rendered');
+    canvas.width = 0;
+    canvas.height = 0;
+    state.renderedScale[idx] = 0;
+    state.renderScale[idx] = 0;
+    var hint = state.hints[idx];
+    if (hint) { hint.textContent = '第 ' + (idx + 1) + ' 页'; }
+  }
+
+  /* ---------------- 渲染调度 ---------------- */
   function setupObserver() {
     if (!('IntersectionObserver' in window)) { return; }
     state.observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         var idx = parseInt(en.target.dataset.page, 10) - 1;
         if (en.isIntersecting) {
-          renderPage(idx);
+          requestRender(idx);
         } else if (Math.abs(idx + 1 - state.currentPage) > 3) {
           unloadPage(idx);
         }
       });
-    }, { root: scroller, rootMargin: '800px 0px' });
+    }, { root: scroller, rootMargin: OBSERVER_MARGIN });
     state.wrappers.forEach(function (w) { state.observer.observe(w); });
   }
 
   function renderVisible() {
-    if (!state.doc) { return; }
+    if (!state.doc || !state.wrappers.length) { return; }
     var scRect = scroller.getBoundingClientRect();
     for (var i = 0; i < state.wrappers.length; i++) {
       var r = state.wrappers[i].getBoundingClientRect();
-      if (r.bottom > scRect.top - 800 && r.top < scRect.bottom + 800) { renderPage(i); }
+      if (r.bottom > scRect.top - 600 && r.top < scRect.bottom + 600) { requestRender(i); }
     }
   }
 
-  function renderPage(idx) {
-    var pdfPage = idx + 1;
-    var scale = scaleFor(idx);
+  function ensurePage(idx) {
+    if (state.pageProxies[idx]) { return Promise.resolve(state.pageProxies[idx]); }
+    if (state.pagePromises[idx]) { return state.pagePromises[idx]; }
+    var token = state.loadToken;
+    var pr = state.doc.getPage(idx + 1).then(function (page) {
+      if (token === state.loadToken) {
+        state.pageProxies[idx] = page;
+        if (!state.baseViewports[idx]) { state.baseViewports[idx] = page.getViewport({ scale: 1 }); }
+      }
+      state.pagePromises[idx] = null;
+      return page;
+    }, function (err) {
+      state.pagePromises[idx] = null;
+      throw err;
+    });
+    state.pagePromises[idx] = pr;
+    return pr;
+  }
+
+  function syncRatio(idx) {
+    var vp = state.baseViewports[idx];
+    if (!vp) { return; }
     var paper = state.papers[idx];
     if (!paper) { return; }
-    if (paper.classList.contains('is-rendered') &&
-        Math.abs(state.renderedScale[idx] - scale) < 0.001) { return; }
-    if (state.renderTasks[idx]) {
-      if (Math.abs(state.renderScale[idx] - scale) < 0.001) { return; }
-      state.wantRender[idx] = true;
-      return;
+    var want = pageRatioCss(vp);
+    if (paper.dataset.ratio !== want) {
+      paper.dataset.ratio = want;
+      paper.style.aspectRatio = want;
+      state.topsDirty = true;
     }
+  }
+
+  function dprFor(vp) {
+    var dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+    var px = vp.width * vp.height * dpr * dpr;
+    if (px > MAX_CANVAS_PIXELS) {
+      dpr = Math.max(1, dpr * Math.sqrt(MAX_CANVAS_PIXELS / px));
+    }
+    return dpr;
+  }
+
+  function requestRender(idx) {
+    if (!state.doc || idx < 0 || idx >= state.wrappers.length) { return; }
+    var scale = scaleFor(idx);
+    if (state.renderedScale[idx] > 0 && Math.abs(state.renderedScale[idx] - scale) < 0.001) { return; }
+    if (state.renderTasks[idx]) { state.wantRender[idx] = true; return; }
+    if (state.wantRender[idx]) { return; }
+    state.wantRender[idx] = true;
+    state.pending.push(idx);
+    pumpRenders();
+  }
+
+  function pumpRenders() {
+    while (state.rendering < MAX_CONCURRENT_RENDERS && state.pending.length) {
+      var idx = state.pending.shift();
+      if (!state.wantRender[idx]) { continue; }
+      // 快速滚动时用户早已离开这一页：丢掉排队任务，省流量也省 CPU
+      if (Math.abs((idx + 1) - state.currentPage) > 6 && state.renderedScale[idx] === 0) {
+        state.wantRender[idx] = false;
+        continue;
+      }
+      startRender(idx);
+    }
+  }
+
+  function startRender(idx) {
+    state.rendering += 1;
+    state.wantRender[idx] = false;
     var gen = state.generation;
-    var pageProxy = state.pageProxies[idx];
+    var paper = state.papers[idx];
     var canvas = state.canvases[idx];
     var hint = state.hints[idx];
+    var usedScale = 0;
     paper.classList.remove('is-failed', 'is-rendered');
-    hint.textContent = '渲染中…';
+    hint.textContent = '加载中…';
 
-    var dpr = clamp(window.devicePixelRatio || 1, 1, 2);
-    var viewport = pageProxy.getViewport({ scale: scale });
-    canvas.width = Math.floor(viewport.width * dpr);
-    canvas.height = Math.floor(viewport.height * dpr);
-    var ctx = canvas.getContext('2d', { alpha: false });
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    var task = pageProxy.render({
-      canvasContext: ctx,
-      viewport: viewport,
-      transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
-      intent: 'display',
-    });
-    state.renderTasks[idx] = task;
-    state.renderScale[idx] = scale;
-    state.wantRender[idx] = false;
-    task.promise.then(function () {
-      if (gen !== state.generation) { return; }
-      state.renderTasks[idx] = null;
-      state.renderedScale[idx] = scale;
-      paper.classList.add('is-rendered');
-      if (state.wantRender[idx]) { state.wantRender[idx] = false; renderPage(idx); }
-    }).catch(function (err) {
-      if (gen !== state.generation) { return; }
-      state.renderTasks[idx] = null;
-      if (err && err.name === 'RenderingCancelledException') {
-        if (state.wantRender[idx]) { state.wantRender[idx] = false; renderPage(idx); }
-        return;
+    ensurePage(idx).then(function (page) {
+      if (gen !== state.generation) { return null; }
+      syncRatio(idx);
+      var scale = scaleFor(idx);
+      usedScale = scale;
+      var vp = page.getViewport({ scale: scale });
+      var dpr = dprFor(vp);
+      canvas.width = Math.max(1, Math.floor(vp.width * dpr));
+      canvas.height = Math.max(1, Math.floor(vp.height * dpr));
+      var ctx = canvas.getContext('2d', { alpha: false });
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
+      var task = page.render({
+        canvasContext: ctx,
+        viewport: vp,
+        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
+        intent: 'display',
+      });
+      state.renderTasks[idx] = task;
+      state.renderScale[idx] = scale;
+      return task.promise;
+    }).then(function () {
+      state.renderTasks[idx] = null;
+      if (gen !== state.generation) { return; }
+      state.renderedScale[idx] = usedScale;
+      paper.classList.add('is-rendered');
+      state.topsDirty = true;
+      if (state.wantRender[idx]) {
+        state.wantRender[idx] = false;
+        state.pending.push(idx);
+      }
+    }).catch(function (err) {
+      state.renderTasks[idx] = null;
+      if (gen !== state.generation) { return; }
+      if (err && err.name === 'RenderingCancelledException') { return; }
       paper.classList.add('is-failed');
-      hint.textContent = '第 ' + pdfPage + ' 页渲染失败：' + (err && err.message ? err.message : err);
-      console.error('render page ' + pdfPage, err);
+      hint.textContent = '第 ' + (idx + 1) + ' 页渲染失败：' + (err && err.message ? err.message : err);
+      console.error('render page ' + (idx + 1), err);
+    }).then(function () {
+      state.rendering = Math.max(0, state.rendering - 1);
+      pumpRenders();
     });
   }
 
@@ -596,14 +713,14 @@
     var p = state.papers[idx];
     if (!p || !p.classList.contains('is-rendered')) { return; }
     if (state.renderTasks[idx]) { return; }
-    p.classList.remove('is-rendered');
-    var c = state.canvases[idx];
-    c.width = 0;
-    c.height = 0;
-    state.renderedScale[idx] = 0;
-    state.hints[idx].textContent = '第 ' + (idx + 1) + ' 页';
-    if (state.pageProxies[idx] && state.pageProxies[idx].cleanup) {
-      try { state.pageProxies[idx].cleanup(); } catch (e) { /* ignore */ }
+    clearCanvas(idx);
+  }
+
+  function prefetchNext(pdfPage) {
+    // 预取下一页，翻页时几乎不用等
+    var idx = pdfPage;
+    if (idx >= 0 && idx < state.wrappers.length && state.renderedScale[idx] === 0) {
+      requestRender(idx);
     }
   }
 
@@ -620,17 +737,23 @@
     var idx = pdfPage - 1;
     var wrap = state.wrappers[idx];
     if (!wrap) { return; }
-    renderPage(idx);
+    setCurrent(pdfPage);          // 先更新当前页，渲染队列据此判断优先级
+    requestRender(idx);
     wrap.scrollIntoView({ block: 'start', behavior: opts.smooth ? 'smooth' : 'auto' });
     if (opts.flash !== false) {
       wrap.classList.remove('flash');
       void wrap.offsetWidth;
       wrap.classList.add('flash');
     }
-    setCurrent(pdfPage);
     try {
       history.replaceState(null, '', '#s=' + state.subjectId + '&vol=' + state.vol + '&page=' + pdfPage);
     } catch (e) { /* ignore */ }
+    if (opts.smooth) {
+      setTimeout(function () { state.topsDirty = true; prefetchNext(pdfPage); }, 420);
+    } else {
+      state.topsDirty = true;
+      prefetchNext(pdfPage);
+    }
   }
 
   function stepPage(delta) {
@@ -667,27 +790,50 @@
     for (var i = 0; i < state.tocButtons.length; i++) {
       var b = state.tocButtons[i];
       if (b.vol !== state.vol) { continue; }
-      if (b.pdf <= pdfPage) { best = b; }
+      if (b.pdf <= pdfPage) { best = b; } else { break; }
     }
     var bestPdf = best ? best.pdf : -1;
+    var changed = false;
     state.tocButtons.forEach(function (b) {
-      b.el.classList.toggle('active', b.vol === state.vol && b.pdf === bestPdf);
+      var on = b.vol === state.vol && b.pdf === bestPdf;
+      if (b.el.classList.contains('active') !== on) {
+        b.el.classList.toggle('active', on);
+        if (on) { changed = true; }
+      }
     });
-    if (best) {
+    if (best && changed) {
       var r = best.el.getBoundingClientRect();
       var hr = tocHost.getBoundingClientRect();
       if (r.top < hr.top + 4 || r.bottom > hr.bottom - 4) { best.el.scrollIntoView({ block: 'center' }); }
     }
   }
 
+  /* ---------------- 滚动定位（缓存偏移 + 二分，避免每帧量所有页） ---------------- */
+  function updateTops() {
+    var scRect = scroller.getBoundingClientRect();
+    var base = scroller.scrollTop - scRect.top;
+    var n = state.wrappers.length;
+    for (var i = 0; i < n; i++) {
+      state.tops[i] = state.wrappers[i].getBoundingClientRect().top + base;
+    }
+    state.topsDirty = false;
+  }
+
+  function currentPageFromScroll() {
+    if (!state.wrappers.length) { return 1; }
+    if (state.topsDirty || state.tops.length !== state.wrappers.length) { updateTops(); }
+    var y = scroller.scrollTop + 90;
+    var lo = 0, hi = state.tops.length - 1, best = 0;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (state.tops[mid] <= y) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return best + 1;
+  }
+
   var onScroll = debounce(function () {
     if (!state.doc) { return; }
-    var scRect = scroller.getBoundingClientRect();
-    var best = state.currentPage;
-    for (var i = 0; i < state.wrappers.length; i++) {
-      var r = state.wrappers[i].getBoundingClientRect();
-      if (r.top - scRect.top <= 90) { best = i + 1; } else { break; }
-    }
+    var best = currentPageFromScroll();
     if (best !== state.currentPage) { setCurrent(best); }
   }, 60);
 
@@ -698,7 +844,7 @@
     loadVolume(subject, vol, targetPage);
   }
 
-  function loadVolume(subject, vol, targetPage) {
+  function loadVolume(subject, vol, targetPage, retry) {
     vol = clamp(vol || 0, 0, subject.volumes.length - 1);
     if (state.subjectId === subject.id && state.vol === vol && state.doc) {
       jumpToPage(targetPage || state.currentPage);
@@ -720,18 +866,17 @@
     rebuildTOC();
     buildSectionIndex();
     var v = currentVolume();
-    showOverlay('正在加载《' + subject.name + (subject.mergedVolumes ? '·' + v.label : '') + '》PDF…',
-      '共 ' + v.pdfPageCount + ' 页，首次加载需要下载后解析，请稍候');
+    showOverlay('正在打开《' + subject.name + (subject.mergedVolumes ? '·' + v.label : '') + '》',
+      '共 ' + v.pdfPageCount + ' 页 · 只按需读取当前页数据，不再整本下载');
 
     var opts = Object.assign({}, PDFJS_OPTS, { url: encodeURI(v.file) });
     var loadingTask = pdfjs.getDocument(opts);
     state.docTask = loadingTask;
-    var lastPct = -1;
+    var lastSub = '';
     loadingTask.onProgress = function (p) {
-      if (p && p.total) {
-        var pct = Math.min(100, Math.round(p.loaded / p.total * 100));
-        if (pct !== lastPct) { lastPct = pct; setOverlaySub('已下载 ' + pct + '% · 正在解析 PDF…'); }
-      }
+      if (!p || !p.total || !p.loaded) { return; }
+      var sub = '已读取 ' + mb(p.loaded) + ' MB（按需分段下载，不再等待整本 PDF）';
+      if (sub !== lastSub) { lastSub = sub; setOverlaySub(sub); }
     };
 
     loadingTask.promise.then(function (doc) {
@@ -740,47 +885,40 @@
         return;
       }
       state.doc = doc;
-      return prepareDocPages(doc, token, subject);
+      return prepareDoc(doc, token, subject);
     }).catch(function (err) {
       if (token !== state.loadToken) { return; }
+      if (err && err.name === 'AbortException') { return; }
+      // 网络抖动（分段请求失败）时自动重试一次，避免用户看到“PDF 加载失败”
+      var msg = String((err && err.message) || '');
+      var netIssue = !err || err.name === 'UnknownErrorException' || /fetch|network|timed?\s*out/i.test(msg);
+      if (!retry && netIssue) {
+        var again = (targetPage != null) ? targetPage : state.pendingPage;
+        setOverlaySub('网络不稳定，正在自动重试…');
+        setTimeout(function () {
+          if (token === state.loadToken) { loadVolume(subject, vol, again, true); }
+        }, 800);
+        return;
+      }
       console.error(err);
       showError('PDF 加载失败', '错误信息：' + escapeHtml(err && err.message ? err.message : String(err)) +
         '<br><br>请确认 <b>' + escapeHtml(v.file) + '</b> 存在，并通过本地服务器访问。');
     });
   }
 
-  function prepareDocPages(doc, token, subject) {
-    var total = doc.numPages;
-    var proxies = new Array(total);
-    var vps = new Array(total);
-    var batch = 12;
-    var next = 0;
-    function worker() {
-      if (token !== state.loadToken) { return Promise.resolve(); }
-      if (next >= total) { return Promise.resolve(); }
-      var start = next;
-      next = Math.min(total, next + batch);
-      var jobs = [];
-      for (var i = start; i < next; i++) {
-        jobs.push(doc.getPage(i + 1).then(function (k) {
-          return function (page) {
-            proxies[k] = page;
-            vps[k] = page.getViewport({ scale: 1 });
-          };
-        }(i)));
-      }
-      return Promise.all(jobs).then(function () {
-        setOverlaySub('正在读取页面尺寸 ' + next + ' / ' + total);
-        return worker();
-      });
-    }
-    return worker().then(function () {
+  /**
+   * 只取第 1 页的尺寸用于排版；其余页保持占位，滚动到哪页再取哪页。
+   * （旧实现会先把全部 300~400 页的 page 对象取一遍，等于把整本 PDF 拉下来。）
+   */
+  function prepareDoc(doc, token, subject) {
+    return doc.getPage(1).then(function (first) {
       if (token !== state.loadToken) {
         try { doc.destroy(); } catch (e) { /* ignore */ }
         return;
       }
-      state.pageProxies = proxies;
-      state.baseViewports = vps;
+      state.pageProxies[0] = first;
+      state.baseViewports[0] = first.getViewport({ scale: 1 });
+      state.defaultViewport = state.baseViewports[0];
       state.doc = doc;
       buildPages();
       hideOverlay();
@@ -795,6 +933,7 @@
     state.scaleMode = zoomSelect.value;
     if (!state.doc) { return; }
     applyLayout();
+    renderVisible();
     jumpToPage(state.currentPage, { flash: false });
   });
 
@@ -838,20 +977,23 @@
     else if (e.key === 'Home') { jumpToPage(1, { flash: false }); }
     else if (e.key === 'End') { jumpToPage(state.subject ? currentVolume().pdfPageCount : 1, { flash: false }); }
     else if (e.key === '[' || e.key === ']') {
-      var idx = SUBJECTS.findIndex(function (s) { return s.id === state.subjectId; });
+      var idx = -1;
+      for (var i = 0; i < SUBJECTS.length; i++) { if (SUBJECTS[i].id === state.subjectId) { idx = i; break; } }
       var nextIdx = (idx + (e.key === ']' ? 1 : -1) + SUBJECTS.length) % SUBJECTS.length;
       loadSubject(SUBJECTS[nextIdx].id, null, null);
     }
   });
 
   window.addEventListener('resize', debounce(function () {
-    if (state.scaleMode === 'fit' && state.doc) { applyLayout(); }
+    if (state.scaleMode === 'fit' && state.doc) { applyLayout(); renderVisible(); }
   }, 200));
 
   function isNarrow() { return window.matchMedia('(max-width: 880px)').matches; }
   function relayoutSoon() {
     if (state.scaleMode !== 'fit') { return; }
-    setTimeout(function () { if (state.doc) { applyLayout(); } }, 320);
+    setTimeout(function () {
+      if (state.doc) { applyLayout(); renderVisible(); }
+    }, 320);
   }
   $('#sideClose').addEventListener('click', function () {
     if (isNarrow()) { closeSidebarMobile(); }

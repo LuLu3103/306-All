@@ -3,18 +3,23 @@
 
 浏览器禁止 file:// 页面 fetch 本地 PDF，所以讲义阅读必须通过这个本地服务器打开。
 用法： python serve.py [端口]
+
+性能相关（讲义阅读器是按 Range 分段读取 PDF 的，请求数量很多）：
+  * HTTP/1.1 + keep-alive：几十个分段请求复用同一条连接，避免每次重新握手
+  * gzip：pdf.js 的 worker 有 1.3MB，压缩后约 1/3
+  * Cache-Control：vendor/js/css 长缓存，PDF 中等缓存，第二次打开基本不重复下载
 """
+import gzip
 import os
 import re
 import sys
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PORT = 8787
-CHUNK = 64 * 1024
+CHUNK = 256 * 1024
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -36,15 +41,29 @@ MIME = {
     ".txt": "text/plain; charset=utf-8",
 }
 
+TEXT_SUFFIX = {".html", ".htm", ".js", ".mjs", ".css", ".json", ".svg", ".txt"}
+
 
 def content_type(path: Path) -> str:
     return MIME.get(path.suffix.lower(), "application/octet-stream")
 
 
-class Handler(BaseHTTPRequestHandler):
-    server_version = "MedLectureViewer/1.0"
+def cache_control(path: Path) -> str:
+    rel = path.relative_to(ROOT).as_posix()
+    if "/vendor/" in "/" + rel or rel.startswith("vendor/"):
+        return "public, max-age=2592000"          # pdf.js / cmaps：30 天
+    if path.suffix.lower() in TEXT_SUFFIX:
+        return "public, max-age=300"              # 页面与脚本：5 分钟
+    if path.suffix.lower() == ".pdf":
+        return "public, max-age=86400"            # 讲义 PDF：1 天
+    return "public, max-age=3600"
 
-    def log_message(self, fmt, *args):  # keep the console quiet-ish
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "MedLectureViewer/1.1"
+    protocol_version = "HTTP/1.1"                 # keep-alive：分段请求复用连接
+
+    def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
     def _resolve(self):
@@ -97,17 +116,33 @@ class Handler(BaseHTTPRequestHandler):
                 if start > end or start >= size:
                     self.send_response(416)
                     self.send_header("Content-Range", "bytes */%d" % size)
+                    self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
                 end = min(end, size - 1)
                 status = 206
 
         length = end - start + 1
+        body = None
+
+        # 只有「整文件 + 文本类型 + 客户端支持 gzip」时才压缩
+        if (status == 200 and target.suffix.lower() in TEXT_SUFFIX and not head_only
+                and "gzip" in (self.headers.get("Accept-Encoding") or "")):
+            try:
+                with open(target, "rb") as f:
+                    body = gzip.compress(f.read(), 6)
+                length = len(body)
+            except OSError:
+                body = None
+
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(length))
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache_control(target))
+        if body is not None:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         if status == 206:
             self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
         self.end_headers()
@@ -116,6 +151,9 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
+            if body is not None:
+                self.wfile.write(body)
+                return
             with open(target, "rb") as f:
                 f.seek(start)
                 remaining = length
@@ -126,12 +164,15 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
         except (ConnectionError, BrokenPipeError):
-            pass
+            # 客户端取消了分段请求（滚动/翻页时 pdf.js 会中断旧的 Range 请求）：
+            # 必须断开这条连接，否则同一条 keep-alive 连接上的下一个请求可能读到半截响应
+            self.close_connection = True
 
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", DEFAULT_PORT))
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    httpd.daemon_threads = True
     url = "http://127.0.0.1:%d/" % port
     print("=" * 62)
     print("  西综学习台 已启动（进度看板 / 学习转盘 / 讲义阅读）")
